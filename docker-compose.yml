@@ -1,0 +1,114 @@
+version: "3.8"
+
+services:
+  spark-master:
+    image: bitnami/spark:3.3.2
+    container_name: spark-master
+    environment:
+      - SPARK_MODE=master
+    ports:
+      - "7077:7077"
+      - "8080:8080"
+      - "7071:7071"
+    volumes:
+      - ./spark-logs:/opt/spark/history
+    networks:
+      - spark-net
+    depends_on:
+      - namenode
+
+  spark-worker:
+    image: bitnami/spark:3.3.2
+    container_name: spark-worker
+    environment:
+      - SPARK_MODE=worker
+      - SPARK_MASTER=spark://spark-master:7077
+    ports:
+      - "8081:8081"
+      - "7072:7071"
+    volumes:
+      - ./spark-logs:/opt/spark/history
+    networks:
+      - spark-net
+    depends_on:
+      - spark-master
+
+  history-server:
+    image: bitnami/spark:3.3.2
+    container_name: spark-history
+    ports:
+      - "18080:18080"
+    volumes:
+      - ./spark-logs:/opt/spark/history
+    command: ["/opt/bitnami/spark/bin/spark-class", "org.apache.spark.deploy.history.HistoryServer"]
+    networks:
+      - spark-net
+
+  namenode:
+    image: bde2020/hadoop-namenode:2.0.0-hadoop3.2.1-java8
+    container_name: namenode
+    environment:
+      - CLUSTER_NAME=test
+    volumes:
+      - namenode-data:/hadoop/dfs/name
+    ports:
+      - "9870:9870"
+      - "9000:9000"
+    networks:
+      - spark-net
+
+  datanode:
+    image: bde2020/hadoop-datanode:2.0.0-hadoop3.2.1-java8
+    container_name: datanode
+    environment:
+      - CORE_CONF_fs_defaultFS=hdfs://namenode:9000
+      - DATANODE_NAME=datanode
+    volumes:
+      - datanode-data:/hadoop/dfs/data
+    networks:
+      - spark-net
+    depends_on:
+      - namenode
+
+  hibench:
+    build: ./hibench
+    container_name: hibench
+    environment:
+      - HADOOP_HOME=/opt/hadoop
+      - SPARK_HOME=/opt/spark
+      - JAVA_HOME=/usr/lib/jvm/java-8-openjdk-amd64
+    networks:
+      - spark-net
+    depends_on:
+      - spark-master
+      - namenode
+    stdin_open: true
+    tty: true
+
+  prometheus:
+    image: prom/prometheus:v2.52.0
+    container_name: prometheus
+    volumes:
+      - ./prometheus/prometheus.yml:/etc/prometheus/prometheus.yml
+    ports:
+      - "9090:9090"
+    networks:
+      - spark-net
+
+  mlflow:
+    image: ghcr.io/mlflow/mlflow:v2.12.1
+    container_name: mlflow
+    ports:
+      - "5000:5000"
+    volumes:
+      - ./mlflow/mlruns:/mlflow/mlruns
+    command: mlflow server --backend-store-uri sqlite:///mlflow.db --default-artifact-root /mlflow/mlruns --host 0.0.0.0
+    networks:
+      - spark-net
+
+volumes:
+  namenode-data:
+  datanode-data:
+
+networks:
+  spark-net:
