@@ -1,43 +1,77 @@
-FROM ubuntu:20.04
+FROM bitnami/spark:3.3
 
-ENV DEBIAN_FRONTEND=noninteractive
+USER root
+ENV DEBIAN_FRONTEND=noninteractive LANG=C.UTF-8 LC_ALL=C.UTF-8
 
-# Установка зависимостей
 RUN apt-get update && apt-get install -y \
-    openjdk-8-jdk wget curl git maven scala python3 \
-    ssh rsync nano net-tools netcat gnupg lsb-release && \
-    apt-get clean
+    git maven wget tar dos2unix ca-certificates python3 \
+ && rm -rf /var/lib/apt/lists/*
 
-# Переменные окружения
-ENV JAVA_HOME=/usr/lib/jvm/java-8-openjdk-amd64
+ENV SPARK_HOME=/opt/spark \
+    HIBENCH_HOME=/opt/hibench
+
+# В bitnami Spark лежит в /opt/bitnami/spark — делаем удобный симлинк
+RUN test -d /opt/spark || ln -s /opt/bitnami/spark /opt/spark
+
+WORKDIR /opt
+
+# --- JDK 8 для сборки HiBench ---
+ARG JDK8_URL=https://github.com/adoptium/temurin8-binaries/releases/download/jdk8u382-b05/OpenJDK8U-jdk_x64_linux_hotspot_8u382b05.tar.gz
+RUN set -eux; \
+    wget -qO /tmp/jdk8.tgz "$JDK8_URL"; \
+    mkdir -p /opt/java; \
+    tar -xzf /tmp/jdk8.tgz -C /opt/java; \
+    rm -f /tmp/jdk8.tgz; \
+    ln -s /opt/java/*jdk8* /opt/java8
+ENV JAVA8_HOME=/opt/java8
+
+# --- Клонируем HiBench ---
+RUN set -eux; \
+  git clone --depth 1 --branch master https://github.com/Intel-bigdata/HiBench.git hibench || \
+  git clone --depth 1 --branch main   https://github.com/Intel-bigdata/HiBench.git hibench; \
+  cd /opt/hibench; \
+  if [ ! -f bin/build_all.sh ] && [ ! -f bin/build-all.sh ]; then \
+    git fetch --tags --depth 1; \
+    for T in v7.1.1 HiBench-7.1 v7.1 7.1 HiBench-7.0 v7.0 7.0; do \
+      if git rev-parse -q --verify "refs/tags/$T" >/dev/null; then \
+        git checkout -q "tags/$T"; \
+        break; \
+      fi; \
+    done; \
+  fi
+
+# Настройки Maven (таймауты/ретраи/зеркало — можно отключить)
+COPY maven-settings.xml /opt/hibench/maven-settings.xml
+
+# --- Сборка HiBench под JDK8 (только common + sparkbench), с кэшем .m2 ---
+RUN --mount=type=cache,target=/root/.m2,sharing=locked \
+    set -eux; \
+    cd /opt/hibench; \
+    export JAVA_HOME="$JAVA8_HOME"; export PATH="$JAVA_HOME/bin:$PATH"; \
+    java -version; mvn -version; \
+    mvn -s /opt/hibench/maven-settings.xml -B -U -DskipTests -T 1C \
+        -pl common,sparkbench -am dependency:go-offline; \
+    mvn -s /opt/hibench/maven-settings.xml -B    -DskipTests -T 1C \
+        -pl common,sparkbench -am clean package
+
+# --- Hadoop 3.3.6 (клиент) ---
+ARG HADOOP_URL=https://downloads.apache.org/hadoop/common/hadoop-3.3.6/hadoop-3.3.6.tar.gz
+RUN set -eux; \
+    wget -qO /tmp/hadoop.tgz "$HADOOP_URL"; \
+    tar -xzf /tmp/hadoop.tgz -C /opt; \
+    ln -s /opt/hadoop-3.3.6 /opt/hadoop; \
+    rm -f /tmp/hadoop.tgz
 ENV HADOOP_HOME=/opt/hadoop
-ENV SPARK_HOME=/opt/spark
-ENV PATH=$HADOOP_HOME/bin:$SPARK_HOME/bin:$PATH
+ENV PATH=$HADOOP_HOME/bin:$HADOOP_HOME/sbin:$PATH
 
-# Установка Spark 3.3.2 с зеркала Huawei
-RUN mkdir -p /opt && \
-    curl -fSL -o /tmp/spark.tgz https://mirrors.huaweicloud.com/apache/spark/spark-3.3.2/spark-3.3.2-bin-hadoop3.tgz && \
-    tar -xzf /tmp/spark.tgz -C /opt && \
-    mv /opt/spark-3.3.2-bin-hadoop3 /opt/spark && \
-    rm /tmp/spark.tgz
-
-# Установка Hadoop 3.3.6 с зеркала Яндекса
-RUN curl -fSL -o /tmp/hadoop.tgz https://mirror.yandex.ru/mirrors/apache/hadoop/core/hadoop-3.3.6/hadoop-3.3.6.tar.gz && \
-    tar -xzf /tmp/hadoop.tgz -C /opt && \
-    mv /opt/hadoop-3.3.6 /opt/hadoop && \
-    rm /tmp/hadoop.tgz
-
-# Клонирование и сборка HiBench с правильными параметрами
-RUN git clone https://github.com/Intel-bigdata/HiBench.git /opt/hibench && \
-    cd /opt/hibench && \
-    mvn -Psparkbench \
-        -Dmodules=micro,ml,sql \
-        -Dspark.version=3.3.2 \
-        -Dscala=2.12 \
-        -Dhadoop.mr2.version=3.3.6 \
-        clean package
-
-# Копирование настроек (если файл есть в контексте сборки)
-COPY hibench.conf /opt/hibench/conf/
-
+# Конфиги HiBench
 WORKDIR /opt/hibench
+COPY conf/hibench.conf conf/hibench.conf
+COPY conf/spark.conf   conf/spark.conf
+
+# Утилиты
+COPY scripts/wordcount_9runs.sh     /usr/local/bin/wordcount_9runs.sh
+COPY scripts/parse_report_to_csv.py /usr/local/bin/parse_report_to_csv.py
+RUN chmod +x /usr/local/bin/wordcount_9runs.sh
+
+CMD ["/bin/bash"]

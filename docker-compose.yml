@@ -1,114 +1,120 @@
-version: "3.8"
+networks:
+  bench-net:
+
+volumes:
+  hdfs-nn:
+  hdfs-dn:
+  spark-history:
 
 services:
+  # ==== HDFS (официальные Apache Hadoop образы) ====
+  namenode:
+    image: apache/hadoop:3.3.6
+    container_name: namenode
+    hostname: namenode
+    user: "0:0"
+    networks: [bench-net]
+    ports:
+      - "9870:9870"
+      - "8020:8020"
+    volumes:
+      - hdfs-nn:/var/lib/hadoop-hdfs
+      - ./hadoop-conf:/opt/hadoop/etc/hadoop:ro
+    environment:
+      - HADOOP_HOME=/opt/hadoop
+      - HADOOP_CONF_DIR=/opt/hadoop/etc/hadoop
+      - PATH=/opt/hadoop/bin:/opt/hadoop/sbin:$PATH
+      - ENSURE_NAMENODE_DIR=/var/lib/hadoop-hdfs/name
+    command: ["hdfs","namenode"]
+    restart: unless-stopped
+
+  datanode:
+    image: apache/hadoop:3.3.6
+    container_name: datanode
+    hostname: datanode
+    user: "0:0"
+    depends_on: [namenode]
+    networks: [bench-net]
+    ports:
+      - "9864:9864"
+    volumes:
+      - hdfs-dn:/var/lib/hadoop-hdfs
+      - ./hadoop-conf:/opt/hadoop/etc/hadoop:ro
+    environment:
+      - HADOOP_HOME=/opt/hadoop
+      - HADOOP_CONF_DIR=/opt/hadoop/etc/hadoop
+      - PATH=/opt/hadoop/bin:/opt/hadoop/sbin:$PATH
+    command: ["hdfs","datanode"]
+    restart: unless-stopped
+
+  # ==== Spark кластер (Bitnami) ====
   spark-master:
-    image: bitnami/spark:3.3.2
+    image: bitnami/spark:3.3
     container_name: spark-master
     environment:
       - SPARK_MODE=master
+      - SPARK_RPC_AUTHENTICATION_ENABLED=no
+      - SPARK_RPC_ENCRYPTION_ENABLED=no
+      - SPARK_LOCAL_STORAGE_ENCRYPTION_ENABLED=no
+      - SPARK_SSL_ENABLED=no
     ports:
-      - "7077:7077"
-      - "8080:8080"
-      - "7071:7071"
+      - "8080:8080"                   # Spark Master UI
+      - "7077:7077"                   # Spark Master RPC
     volumes:
-      - ./spark-logs:/opt/spark/history
-    networks:
-      - spark-net
-    depends_on:
-      - namenode
+      - spark-history:/opt/spark/history
+    networks: [bench-net]
+    restart: unless-stopped
 
-  spark-worker:
-    image: bitnami/spark:3.3.2
-    container_name: spark-worker
+  spark-worker-1:
+    image: bitnami/spark:3.3
+    container_name: spark-worker-1
     environment:
       - SPARK_MODE=worker
-      - SPARK_MASTER=spark://spark-master:7077
-    ports:
-      - "8081:8081"
-      - "7072:7071"
-    volumes:
-      - ./spark-logs:/opt/spark/history
-    networks:
-      - spark-net
-    depends_on:
-      - spark-master
+      - SPARK_MASTER_URL=spark://spark-master:7077
+      - SPARK_WORKER_MEMORY=4G
+      - SPARK_WORKER_CORES=2
+    depends_on: [spark-master]
+    networks: [bench-net]
+    restart: unless-stopped
 
-  history-server:
-    image: bitnami/spark:3.3.2
+  spark-worker-2:
+    image: bitnami/spark:3.3
+    container_name: spark-worker-2
+    environment:
+      - SPARK_MODE=worker
+      - SPARK_MASTER_URL=spark://spark-master:7077
+      - SPARK_WORKER_MEMORY=4G
+      - SPARK_WORKER_CORES=2
+    depends_on: [spark-master]
+    networks: [bench-net]
+    restart: unless-stopped
+
+  # ==== Spark History Server (уже ОК) ====
+  spark-history:
+    image: bitnami/spark:3.3
     container_name: spark-history
+    depends_on: [spark-master]
+    networks: [bench-net]
     ports:
       - "18080:18080"
     volumes:
-      - ./spark-logs:/opt/spark/history
-    command: ["/opt/bitnami/spark/bin/spark-class", "org.apache.spark.deploy.history.HistoryServer"]
-    networks:
-      - spark-net
-
-  namenode:
-    image: bde2020/hadoop-namenode:2.0.0-hadoop3.2.1-java8
-    container_name: namenode
+      - spark-history:/opt/spark/history
     environment:
-      - CLUSTER_NAME=test
-    volumes:
-      - namenode-data:/hadoop/dfs/name
-    ports:
-      - "9870:9870"
-      - "9000:9000"
-    networks:
-      - spark-net
+      - SPARK_HISTORY_OPTS=-Dspark.history.fs.logDirectory=file:/opt/spark/history -Dspark.history.ui.port=18080
+    command: ["bash","-lc","mkdir -p /opt/spark/history && /opt/bitnami/spark/sbin/start-history-server.sh && sleep infinity"]
+    restart: unless-stopped
 
-  datanode:
-    image: bde2020/hadoop-datanode:2.0.0-hadoop3.2.1-java8
-    container_name: datanode
-    environment:
-      - CORE_CONF_fs_defaultFS=hdfs://namenode:9000
-      - DATANODE_NAME=datanode
-    volumes:
-      - datanode-data:/hadoop/dfs/data
-    networks:
-      - spark-net
-    depends_on:
-      - namenode
-
+  # ==== HiBench ====
   hibench:
-    build: ./hibench
+    build:
+      context: ./hibench
+      dockerfile: Dockerfile
     container_name: hibench
-    environment:
-      - HADOOP_HOME=/opt/hadoop
-      - SPARK_HOME=/opt/spark
-      - JAVA_HOME=/usr/lib/jvm/java-8-openjdk-amd64
-    networks:
-      - spark-net
-    depends_on:
-      - spark-master
-      - namenode
-    stdin_open: true
-    tty: true
-
-  prometheus:
-    image: prom/prometheus:v2.52.0
-    container_name: prometheus
+    depends_on: [namenode, datanode, spark-master]
+    networks: [bench-net]
     volumes:
-      - ./prometheus/prometheus.yml:/etc/prometheus/prometheus.yml
-    ports:
-      - "9090:9090"
-    networks:
-      - spark-net
+      - spark-history:/opt/spark/history   # чтобы event logs видел History UI
+    # держим контейнер запущенным и готовы выполнять команды внутрь
+    command: ["bash","-lc","sleep infinity"]
+    restart: unless-stopped
 
-  mlflow:
-    image: ghcr.io/mlflow/mlflow:v2.12.1
-    container_name: mlflow
-    ports:
-      - "5000:5000"
-    volumes:
-      - ./mlflow/mlruns:/mlflow/mlruns
-    command: mlflow server --backend-store-uri sqlite:///mlflow.db --default-artifact-root /mlflow/mlruns --host 0.0.0.0
-    networks:
-      - spark-net
-
-volumes:
-  namenode-data:
-  datanode-data:
-
-networks:
-  spark-net:
