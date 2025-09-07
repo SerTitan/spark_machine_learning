@@ -5,6 +5,8 @@ volumes:
   hdfs-nn:
   hdfs-dn:
   spark-history:
+  mlruns:
+  mlartifacts:
 
 services:
   # ==== HDFS (официальные Apache Hadoop образы) ====
@@ -165,3 +167,24 @@ services:
       retries: 20
       start_period: 15s
     restart: unless-stopped
+
+  mlflow:
+    build:
+      context: ./mlflow
+      dockerfile: Dockerfile
+    container_name: mlflow
+    networks: [bench-net]
+    ports:
+      - "5000:5000"
+    volumes:
+      - mlruns:/mlflow/mlruns
+      - mlartifacts:/mlflow/mlartifacts
+    healthcheck:
+      test: ["CMD-SHELL","/bin/bash -lc 'exec 3<>/dev/tcp/127.0.0.1/5000' || exit 1"]
+      interval: 5s
+      timeout: 4s
+      retries: 30
+      start_period: 10s
+    restart: unless-stopped
+
+
