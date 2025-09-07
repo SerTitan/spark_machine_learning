@@ -15,8 +15,8 @@ services:
     user: "0:0"
     networks: [bench-net]
     ports:
-      - "9870:9870"
-      - "8020:8020"
+      - "9870:9870"   # NN UI
+      - "8020:8020"   # NN RPC (fs.defaultFS)
     volumes:
       - hdfs-nn:/var/lib/hadoop-hdfs
       - ./hadoop-conf:/opt/hadoop/etc/hadoop:ro
@@ -26,6 +26,12 @@ services:
       - PATH=/opt/hadoop/bin:/opt/hadoop/sbin:$PATH
       - ENSURE_NAMENODE_DIR=/var/lib/hadoop-hdfs/name
     command: ["hdfs","namenode"]
+    healthcheck:
+      test: ["CMD-SHELL","/opt/hadoop/bin/hdfs dfs -ls / >/dev/null 2>&1 || exit 1"]
+      interval: 5s
+      timeout: 4s
+      retries: 20
+      start_period: 10s
     restart: unless-stopped
 
   datanode:
@@ -33,10 +39,12 @@ services:
     container_name: datanode
     hostname: datanode
     user: "0:0"
-    depends_on: [namenode]
+    depends_on:
+      namenode:
+        condition: service_healthy
     networks: [bench-net]
     ports:
-      - "9864:9864"
+      - "9864:9864"   # DN UI
     volumes:
       - hdfs-dn:/var/lib/hadoop-hdfs
       - ./hadoop-conf:/opt/hadoop/etc/hadoop:ro
@@ -45,6 +53,12 @@ services:
       - HADOOP_CONF_DIR=/opt/hadoop/etc/hadoop
       - PATH=/opt/hadoop/bin:/opt/hadoop/sbin:$PATH
     command: ["hdfs","datanode"]
+    healthcheck:
+      test: ["CMD-SHELL","/opt/hadoop/bin/hdfs dfs -ls / >/dev/null 2>&1 || exit 1"]
+      interval: 5s
+      timeout: 4s
+      retries: 20
+      start_period: 10s
     restart: unless-stopped
 
   # ==== Spark кластер (Bitnami) ====
@@ -58,11 +72,18 @@ services:
       - SPARK_LOCAL_STORAGE_ENCRYPTION_ENABLED=no
       - SPARK_SSL_ENABLED=no
     ports:
-      - "8080:8080"                   # Spark Master UI
-      - "7077:7077"                   # Spark Master RPC
+      - "8080:8080"   # Spark Master UI
+      - "7077:7077"   # Spark Master RPC
     volumes:
       - spark-history:/opt/spark/history
     networks: [bench-net]
+    healthcheck:
+      # без curl/wget: проверяем TCP-сокет 8080
+      test: ["CMD-SHELL","/bin/bash -lc 'exec 3<>/dev/tcp/127.0.0.1/8080' || exit 1"]
+      interval: 5s
+      timeout: 4s
+      retries: 30
+      start_period: 10s
     restart: unless-stopped
 
   spark-worker-1:
@@ -73,7 +94,9 @@ services:
       - SPARK_MASTER_URL=spark://spark-master:7077
       - SPARK_WORKER_MEMORY=4G
       - SPARK_WORKER_CORES=2
-    depends_on: [spark-master]
+    depends_on:
+      spark-master:
+        condition: service_healthy
     networks: [bench-net]
     restart: unless-stopped
 
@@ -85,15 +108,19 @@ services:
       - SPARK_MASTER_URL=spark://spark-master:7077
       - SPARK_WORKER_MEMORY=4G
       - SPARK_WORKER_CORES=2
-    depends_on: [spark-master]
+    depends_on:
+      spark-master:
+        condition: service_healthy
     networks: [bench-net]
     restart: unless-stopped
 
-  # ==== Spark History Server (уже ОК) ====
+  # ==== Spark History Server ====
   spark-history:
     image: bitnami/spark:3.3
     container_name: spark-history
-    depends_on: [spark-master]
+    depends_on:
+      spark-master:
+        condition: service_healthy
     networks: [bench-net]
     ports:
       - "18080:18080"
@@ -102,19 +129,39 @@ services:
     environment:
       - SPARK_HISTORY_OPTS=-Dspark.history.fs.logDirectory=file:/opt/spark/history -Dspark.history.ui.port=18080
     command: ["bash","-lc","mkdir -p /opt/spark/history && /opt/bitnami/spark/sbin/start-history-server.sh && sleep infinity"]
+    healthcheck:
+      test: ["CMD-SHELL","/bin/bash -lc 'exec 3<>/dev/tcp/127.0.0.1/18080' || exit 1"]
+      interval: 5s
+      timeout: 4s
+      retries: 30
+      start_period: 10s
     restart: unless-stopped
 
-  # ==== HiBench ====
+  # ==== HiBench (наш инструментальный контейнер) ====
   hibench:
     build:
       context: ./hibench
       dockerfile: Dockerfile
     container_name: hibench
-    depends_on: [namenode, datanode, spark-master]
+    depends_on:
+      namenode:
+        condition: service_healthy
+      datanode:
+        condition: service_healthy
+      spark-master:
+        condition: service_healthy
     networks: [bench-net]
     volumes:
       - spark-history:/opt/spark/history   # чтобы event logs видел History UI
-    # держим контейнер запущенным и готовы выполнять команды внутрь
+    environment:
+      - HADOOP_HOME=/opt/hadoop
+      - HADOOP_CONF_DIR=/opt/hadoop/etc/hadoop
+      - PATH=/opt/hadoop/bin:/opt/hadoop/sbin:/opt/bitnami/spark/bin:$PATH
     command: ["bash","-lc","sleep infinity"]
+    healthcheck:
+      test: ["CMD-SHELL","/bin/bash -lc '/opt/bitnami/spark/bin/spark-submit --version >/dev/null 2>&1 && /opt/hadoop/bin/hdfs dfs -fs hdfs://namenode:8020 -ls / >/dev/null 2>&1'"]
+      interval: 5s
+      timeout: 4s
+      retries: 20
+      start_period: 15s
     restart: unless-stopped
-

@@ -26,7 +26,7 @@ ENV HADOOP_HOME=/opt/hadoop
 ENV HADOOP_CONF_DIR=/opt/hadoop/etc/hadoop
 ENV PATH=$HADOOP_HOME/bin:$HADOOP_HOME/sbin:$PATH
 
-# --- JDK 8 (только для сборки HiBench; в рантайме будем использовать Java 17 из bitnami) ---
+# --- JDK 8 (только для сборки HiBench; рантайм Spark — Java 17 из bitnami) ---
 ARG JDK8_URL=https://github.com/adoptium/temurin8-binaries/releases/download/jdk8u382-b05/OpenJDK8U-jdk_x64_linux_hotspot_8u382b05.tar.gz
 RUN set -eux; \
     wget -qO /tmp/jdk8.tgz "$JDK8_URL"; \
@@ -34,7 +34,6 @@ RUN set -eux; \
     tar -xzf /tmp/jdk8.tgz -C /opt/java; \
     rm -f /tmp/jdk8.tgz; \
     ln -s /opt/java/*jdk8* /opt/java8
-# ВАЖНО: не выставляем JAVA_HOME глобально, чтобы рантайм Spark использовал /opt/bitnami/java (Java 17)
 
 # --- Клонируем HiBench ---
 RUN set -eux; \
@@ -64,7 +63,7 @@ from pathlib import Path
 import re
 for p in ['/opt/hibench/bin/functions/terminalsize.py','/opt/hibench/bin/functions/execute_with_log.py']:
     fp = Path(p)
-    if not fp.exists(): 
+    if not fp.exists():
         continue
     s = fp.read_text(encoding='utf-8', errors='ignore')
     s = re.sub(r'(?m)^[ \t]*print (.+)$', lambda m: 'print(' + m.group(1).rstrip() + ')', s)
@@ -72,7 +71,7 @@ for p in ['/opt/hibench/bin/functions/terminalsize.py','/opt/hibench/bin/functio
 print('patched python3 prints')
 PY
 
-# --- Сборка common + sparkbench с использованием Java8 только в build-слое ---
+# --- Сборка common + sparkbench (Java8 только на билд) ---
 RUN --mount=type=cache,target=/root/.m2,sharing=locked \
     set -eux; \
     cd /opt/hibench; \
@@ -88,10 +87,9 @@ WORKDIR /opt/hibench
 COPY conf/hibench.conf conf/hibench.conf
 COPY conf/spark.conf   conf/spark.conf
 
-# --- Наши утилиты: JavaWordCount-бенч и парсер CSV (сразу в образ) ---
-COPY scripts/wordcount_runs_java.sh     /usr/local/bin/wordcount_runs_java.sh
-COPY scripts/parse_report_to_csv.py     /usr/local/bin/parse_report_to_csv.py
+# --- Наши утилиты: JavaWordCount-бенч и парсер CSV ---
+COPY scripts/wordcount_runs_java.sh /usr/local/bin/wordcount_runs_java.sh
+COPY scripts/parse_report_to_csv.py /usr/local/bin/parse_report_to_csv.py
 RUN chmod +x /usr/local/bin/wordcount_runs_java.sh /usr/local/bin/parse_report_to_csv.py
 
-# По умолчанию — интерактивный шелл
 CMD ["/bin/bash"]

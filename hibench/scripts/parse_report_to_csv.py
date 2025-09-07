@@ -9,7 +9,6 @@ out_csv   = Path("/tmp/wordcount_runs.csv")
 rows = []
 
 def parse_wc_runs_line(line: str):
-    # Наш формат: WordCount,Spark,<scale>,<duration_sec>
     parts = [p.strip() for p in line.strip().split(",")]
     if len(parts) == 4 and parts[0].lower().startswith("wordcount"):
         bench, engine, scale, dur = parts
@@ -20,7 +19,6 @@ def parse_wc_runs_line(line: str):
     return None
 
 def parse_report_line(line: str):
-    # Псевдо-HiBench: "WordCount\tSpark\t<scale>\t<duration>"
     parts = [p.strip() for p in re.split(r"[\t ]+", line.strip())]
     if len(parts) >= 4 and parts[0].lower().startswith("wordcount"):
         bench, engine, scale, dur = parts[0], parts[1], parts[2], parts[3]
@@ -32,7 +30,6 @@ def parse_report_line(line: str):
                 return bench, engine, scale, float(m.group(1))
     return None
 
-# 1) Пробуем wc_runs.txt (наш основной источник)
 if runs_file.exists():
     with runs_file.open() as f:
         for line in f:
@@ -42,7 +39,6 @@ if runs_file.exists():
             if rec:
                 rows.append(rec)
 
-# 2) Если вдруг wc_runs.txt пустой — пробуем report
 if not rows and report.exists():
     with report.open() as f:
         for line in f:
