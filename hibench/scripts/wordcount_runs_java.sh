@@ -1,97 +1,103 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-# ========= ПАРАМЕТРЫ =========
-RUNS="${RUNS:-9}"
-NUM_LINES="${NUM_LINES:-500000}"
-SCALE="${DATASIZE:-tiny}"
-HDFS_URI="${HDFS_URI:-hdfs://namenode:8020}"
-HDFS_IN_DIR="${HDFS_IN_DIR:-/HiBench/Wordcount/Input}"
-HDFS_IN_PATH="$HDFS_IN_DIR/part-00000"
+# Входные переменные (передаются извне):
+#   RUNS, DATASIZE, SPARK_CONF, SKIP_PREPARE
+# Метаданные от раннера: /tmp/wc_meta.json (там input_gb, parallelism и пр.)
+
+META=/tmp/wc_meta.json
+RUNS="${RUNS:-3}"
+DATASIZE="${DATASIZE:-tiny}"
 SPARK_CONF="${SPARK_CONF:-}"
-SKIP_PREPARE="${SKIP_PREPARE:-0}"   # <<< НОВОЕ: 1 = не трогаем HDFS-вход
+SKIP_PREPARE="${SKIP_PREPARE:-1}"
 
-# ========= ОКРУЖЕНИЕ =========
-export HIBENCH_HOME=${HIBENCH_HOME:-/opt/hibench}
-export WORKLOAD_RESULT_FOLDER=${WORKLOAD_RESULT_FOLDER:-$HIBENCH_HOME/report}
-export HADOOP_HOME=${HADOOP_HOME:-/opt/hadoop}
-export SPARK_HOME=${SPARK_HOME:-/opt/bitnami/spark}
-if [ -d /opt/bitnami/java ]; then
-  export JAVA_HOME=/opt/bitnami/java
-  export PATH="$JAVA_HOME/bin:$PATH"
-fi
-export PATH="/opt/bitnami/spark/bin:$SPARK_HOME/bin:$HADOOP_HOME/bin:$PATH"
+export JAVA_HOME=/opt/bitnami/java
+export HADOOP_HOME=/opt/hadoop
+export SPARK_HOME=/opt/bitnami/spark
+export PATH="$JAVA_HOME/bin:$HADOOP_HOME/bin:$SPARK_HOME/bin:$PATH"
 
-HDFS_BIN="/opt/hadoop/bin/hdfs"
-SPARK_SUBMIT="/opt/bitnami/spark/bin/spark-submit"
-REPORT="$WORKLOAD_RESULT_FOLDER/hibench.report"
-RUNS_FILE="/tmp/wc_runs.txt"
-LOCAL_TMP="/tmp/wc_input.txt"
+SPARK_EXAMPLES_JAR="$(ls -1 /opt/bitnami/spark/examples/jars/spark-examples_2.12-*.jar | head -n1)"
+INPUT_DIR="hdfs://namenode:8020/HiBench/Wordcount/Input"
 
-# ========= ПРОВЕРКИ =========
-[ -x "$SPARK_SUBMIT" ] || { echo "[ERR] spark-submit not found at $SPARK_SUBMIT"; exit 1; }
-[ -x "$HDFS_BIN" ] || { echo "[ERR] hdfs not found at $HDFS_BIN"; exit 1; }
-if ! "$HDFS_BIN" dfs -fs "$HDFS_URI" -ls / >/dev/null 2>&1; then
-  echo "[ERR] HDFS is not reachable at $HDFS_URI"; exit 1
-fi
-JAR="$(ls -1 /opt/bitnami/spark/examples/jars/spark-examples_2.12-3.*.jar 2>/dev/null | head -n1 || true)"
-[ -n "$JAR" ] || { echo "[ERR] spark-examples jar not found"; exit 1; }
-
-mkdir -p "$WORKLOAD_RESULT_FOLDER"
-echo -e "Benchmark\tEngine\tScale\tDuration(s)" > "$REPORT"
-: > "$RUNS_FILE"
-
-# ========= ПОДГОТОВКА ВХОДА (опционально) =========
-if [ "$SKIP_PREPARE" = "1" ]; then
-  echo "[*] SKIP_PREPARE=1 — пропускаю подготовку входа"
-  # sanity: убедимся, что файл есть
-  if ! "$HDFS_BIN" dfs -fs "$HDFS_URI" -test -f "$HDFS_IN_PATH"; then
-    echo "[ERR] SKIP_PREPARE=1, но входа нет: $HDFS_IN_PATH"; exit 1
-  fi
-else
-  echo "[*] Preparing input: $NUM_LINES lines -> $HDFS_URI$HDFS_IN_PATH"
-  yes "lorem ipsum dolor sit amet consectetur adipiscing elit" | head -n "$NUM_LINES" > "$LOCAL_TMP"
-  [ -s "$LOCAL_TMP" ] || { echo "[ERR] local input empty"; exit 1; }
-
-  "$HDFS_BIN" dfs -fs "$HDFS_URI" -rm -r -f -skipTrash "$HDFS_IN_DIR" >/dev/null 2>&1 || true
-  "$HDFS_BIN" dfs -fs "$HDFS_URI" -mkdir -p "$HDFS_IN_DIR"
-  "$HDFS_BIN" dfs -fs "$HDFS_URI" -put -f "$LOCAL_TMP" "$HDFS_IN_PATH"
-fi
-
-"$HDFS_BIN" dfs -fs "$HDFS_URI" -ls -h "$HDFS_IN_DIR" | sed -n '1,5p' || true
-
-# ========= ЗАПУСКИ =========
-echo "[*] Running JavaWordCount x $RUNS"
-for i in $(seq 1 "$RUNS"); do
-  echo "[*] Run $i/$RUNS ..."
-  LOG="/tmp/wc_java_${i}.log"
-  start_ns=$(date +%s%N)
-  set +e
-  "$SPARK_SUBMIT" \
-    --master spark://spark-master:7077 \
-    $SPARK_CONF \
-    --class org.apache.spark.examples.JavaWordCount \
-    "$JAR" "$HDFS_URI$HDFS_IN_DIR" \
-    >"$LOG" 2>&1
-  rc=$?
-  set -e
-  end_ns=$(date +%s%N)
-  dur_ms=$(( (end_ns - start_ns) / 1000000 ))
-  dur_sec=$(python3 - <<PY
-d=$dur_ms/1000.0
-print(f"{d:.3f}")
+# ---- читаем мету ----
+INPUT_GB=1
+PARALLELISM=128
+if [[ -f "$META" ]]; then
+  INPUT_GB=$(python3 - <<PY
+import json;print(int(json.load(open("$META")).get("input_gb",1)))
 PY
 )
-  if [ $rc -ne 0 ]; then
-    echo "[ERR] Run $i failed (rc=$rc). Tail:"
-    tail -n 80 "$LOG" || true
+  PARALLELISM=$(python3 - <<PY
+import json;print(int(json.load(open("$META")).get("parallelism",128)))
+PY
+)
+fi
+
+# ---- подготовка данных (настоящий large через RandomTextWriter) ----
+if [[ "${SKIP_PREPARE}" != "1" ]]; then
+  echo "[*] PREPARE: purge old input & generate ${INPUT_GB} GB via RandomTextWriter → ${INPUT_DIR}"
+  hdfs dfs -rm -r -f "${INPUT_DIR}" >/dev/null 2>&1 || true
+  hdfs dfs -mkdir -p "$(dirname "${INPUT_DIR}")"
+
+  # Байт в ГБ
+  TOTAL_BYTES=$(( INPUT_GB * 1024 * 1024 * 1024 ))
+
+  # Кол-во карт (не слишком мелко/крупно): ~= PARALLELISM/4 в [4..64]
+  MAPS=$(( PARALLELISM / 4 ))
+  [[ ${MAPS} -lt 4  ]] && MAPS=4
+  [[ ${MAPS} -gt 64 ]] && MAPS=64
+
+  # bytes per map (>=128MB)
+  BYTES_PER_MAP=$(( TOTAL_BYTES / MAPS ))
+  [[ ${BYTES_PER_MAP} -lt 134217728 ]] && BYTES_PER_MAP=134217728
+
+  EX_JAR="$(ls -1 $HADOOP_HOME/share/hadoop/mapreduce/hadoop-mapreduce-examples-*.jar | head -n1)"
+  if [[ -z "${EX_JAR}" || ! -f "${EX_JAR}" ]]; then
+    echo "ERROR: hadoop-mapreduce-examples jar not found under $HADOOP_HOME/share/hadoop/mapreduce" >&2
+    exit 5
+  fi
+
+  hadoop jar "${EX_JAR}" randomtextwriter \
+    -D mapreduce.randomtextwriter.totalbytes="${TOTAL_BYTES}" \
+    -D mapreduce.randomtextwriter.bytespermap="${BYTES_PER_MAP}" \
+    -D mapreduce.job.maps="${MAPS}" \
+    -D mapreduce.job.reduces=0 \
+    "${INPUT_DIR}"
+
+  echo "[*] PREPARE: done ($(hdfs dfs -du -h "${INPUT_DIR}" | awk '{s+=$1} END {print (s? s : 0) " bytes total"}'))"
+else
+  echo "[*] SKIP_PREPARE=1 — пропускаю генерацию, использую существующий ${INPUT_DIR}"
+fi
+
+# ---- прогоняем JavaWordCount RUNS раз ----
+: > /tmp/wc_runs.txt
+for i in $(seq 1 "${RUNS}"); do
+  echo "[*] Run ${i}/${RUNS} ..."
+  LOG="/tmp/wc_java_${i}.log"
+  START=$(date +%s)
+
+  set +e
+  spark-submit \
+    --master spark://spark-master:7077 \
+    ${SPARK_CONF} \
+    --class org.apache.spark.examples.JavaWordCount \
+    "${SPARK_EXAMPLES_JAR}" \
+    "${INPUT_DIR}" \
+    > "${LOG}" 2>&1
+  rc=$?
+  set -e
+
+  END=$(date +%s)
+  DUR=$(awk -v s="$START" -v e="$END" 'BEGIN{print (e-s)+0.000}')
+
+  if [[ $rc -ne 0 ]]; then
+    echo "!! FAIL run ${i} (rc=${rc}) — смотрим ${LOG}"
+    tail -n 200 "${LOG}" || true
     exit $rc
   fi
-  echo "WordCount,Spark,${SCALE},${dur_sec}" >> "$RUNS_FILE"
-  printf "WordCount\tSpark\t%s\t%s\n" "$SCALE" "$dur_sec" >> "$REPORT"
-  echo "    OK $i: ${dur_sec}s"
+
+  printf "WordCount,Spark,%s,%.3f\n" "${DATASIZE}" "${DUR}" | tee -a /tmp/wc_runs.txt
 done
 
 echo "[*] Done. Tail wc_runs:"
-tail -n 5 "$RUNS_FILE" || true
-echo "[*] Report at $REPORT"
+tail -n 5 /tmp/wc_runs.txt || true

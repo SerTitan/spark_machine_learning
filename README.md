@@ -18,3 +18,5 @@ docker-compose up -d
 - Prometheus UI:   http://localhost:9090
 - MLflow UI:       http://localhost:5000
 ```
+
+docker exec -it hibench bash -lc 'export JAVA_HOME=/opt/bitnami/java; export PATH="$JAVA_HOME/bin:/opt/bitnami/spark/bin:/opt/hadoop/bin:$PATH"; SKIP_PREPARE=1 RUNS=9 DATASIZE=tiny wordcount_runs_java.sh'

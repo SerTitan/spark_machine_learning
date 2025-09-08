@@ -1,0 +1,27 @@
+<configuration>
+  <!-- RM: пусть будет по hostname -->
+  <property>
+    <name>yarn.resourcemanager.hostname</name>
+    <value>resourcemanager</value>
+  </property>
+
+  <!-- NM рабочие директории: ДОЛЖНЫ быть доступными на запись -->
+  <property>
+    <name>yarn.nodemanager.local-dirs</name>
+    <value>/hadoop/yarn/local</value>
+  </property>
+  <property>
+    <name>yarn.nodemanager.log-dirs</name>
+    <value>/var/log/hadoop-yarn</value>
+  </property>
+
+  <!-- Остальной стандарт, если вдруг не было -->
+  <property>
+    <name>yarn.nodemanager.aux-services</name>
+    <value>mapreduce_shuffle</value>
+  </property>
+  <property>
+    <name>yarn.nodemanager.aux-services.mapreduce.shuffle.class</name>
+    <value>org.apache.hadoop.mapred.ShuffleHandler</value>
+  </property>
+</configuration>
