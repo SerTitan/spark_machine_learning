@@ -1,21 +1,39 @@
+# ---- Stage 1: Build HiBench with JDK8 ----
+FROM openjdk:8-jdk-bullseye AS build
+
+RUN apt-get update && \
+    apt-get install -y python3 python3-pip python3-lib2to3 bc maven git && \
+    rm -rf /var/lib/apt/lists/*
+
+WORKDIR /opt
+
+# Клонируем HiBench
+RUN git clone https://github.com/Intel-bigdata/HiBench.git hibench
+WORKDIR /opt/hibench
+
+# Сборка под Hadoop 3.2 / Spark 3.0 (совместимые артефакты)
+RUN mvn -Psparkbench -Phadoopbench -Dspark=3.0 -Dscala=2.12 -Dhadoop=3.2 \
+        clean package -DskipTests
+
+# ---- Stage 2: Runtime on Spark ----
 FROM bitnami/spark:3.3
 
 USER root
 ENV DEBIAN_FRONTEND=noninteractive LANG=C.UTF-8 LC_ALL=C.UTF-8
 
-# Инструменты
+# Утилиты
 RUN apt-get update && apt-get install -y \
-    git maven wget curl tar dos2unix ca-certificates python3 \
+    git maven wget curl tar dos2unix ca-certificates python3 python3-lib2to3 bc \
  && rm -rf /var/lib/apt/lists/*
 
-# Удобный симлинк на Spark (в bitnami: /opt/bitnami/spark)
+# Симлинк на Spark (bitnami кладёт в /opt/bitnami/spark)
 ENV SPARK_HOME=/opt/spark \
     HIBENCH_HOME=/opt/hibench
 RUN test -d /opt/spark || ln -s /opt/bitnami/spark /opt/spark
 
 WORKDIR /opt
 
-# --- Hadoop 3.3.6 (клиент) ---
+# --- Hadoop 3.3.6 (client only) ---
 ARG HADOOP_URL=https://downloads.apache.org/hadoop/common/hadoop-3.3.6/hadoop-3.3.6.tar.gz
 RUN set -eux; \
     wget -qO /tmp/hadoop.tgz "$HADOOP_URL"; \
@@ -26,7 +44,7 @@ ENV HADOOP_HOME=/opt/hadoop
 ENV HADOOP_CONF_DIR=/opt/hadoop/etc/hadoop
 ENV PATH=$HADOOP_HOME/bin:$HADOOP_HOME/sbin:$PATH
 
-# --- JDK 8 (только для сборки HiBench; рантайм Spark — Java 17 из bitnami) ---
+# --- JDK 8 (оставляем на всякий случай для пересборки) ---
 ARG JDK8_URL=https://github.com/adoptium/temurin8-binaries/releases/download/jdk8u382-b05/OpenJDK8U-jdk_x64_linux_hotspot_8u382b05.tar.gz
 RUN set -eux; \
     wget -qO /tmp/jdk8.tgz "$JDK8_URL"; \
@@ -35,59 +53,26 @@ RUN set -eux; \
     rm -f /tmp/jdk8.tgz; \
     ln -s /opt/java/*jdk8* /opt/java8
 
-# --- Клонируем HiBench ---
-RUN set -eux; \
-  git clone --depth 1 --branch master https://github.com/Intel-bigdata/HiBench.git hibench || \
-  git clone --depth 1 --branch main   https://github.com/Intel-bigdata/HiBench.git hibench; \
-  cd /opt/hibench; \
-  if [ ! -f bin/build_all.sh ] && [ ! -f bin/build-all.sh ]; then \
-    git fetch --tags --depth 1; \
-    for T in v7.1.1 HiBench-7.1 v7.1 7.1 HiBench-7.0 v7.0 7.0; do \
-      if git rev-parse -q --verify "refs/tags/$T" >/dev/null; then \
-        git checkout -q "tags/$T"; \
-        break; \
-      fi; \
-    done; \
-  fi
+# --- Копируем готовый HiBench из build-stage ---
+COPY --from=build /opt/hibench /opt/hibench
 
-# Настройки Maven (опционально: зеркала/таймауты)
-COPY maven-settings.xml /opt/hibench/maven-settings.xml
+WORKDIR /opt/hibench
 
-# --- Перевод legacy python-скриптов HiBench на Python3 (shebang + print) ---
-RUN set -eux; \
-  sed -i '1s|/usr/bin/env python2|/usr/bin/env python3|; 1s|/usr/bin/env python|/usr/bin/env python3|' \
-    /opt/hibench/bin/functions/execute_with_log.py \
-    /opt/hibench/bin/functions/terminalsize.py || true; \
-  python3 - <<'PY'
-from pathlib import Path
-import re
-for p in ['/opt/hibench/bin/functions/terminalsize.py','/opt/hibench/bin/functions/execute_with_log.py']:
-    fp = Path(p)
-    if not fp.exists():
-        continue
-    s = fp.read_text(encoding='utf-8', errors='ignore')
-    s = re.sub(r'(?m)^[ \t]*print (.+)$', lambda m: 'print(' + m.group(1).rstrip() + ')', s)
-    fp.write_text(s, encoding='utf-8')
-print('patched python3 prints')
-PY
+# --- Прогоняем 2to3 + фиксим скрипты Python ---
+RUN 2to3 -w bin/functions/*.py || true && \
+    sed -i '1s|/usr/bin/env python2|/usr/bin/env python3|' bin/functions/*.py || true && \
+    chmod +x bin/functions/*.py
 
-# --- Сборка common + sparkbench (Java8 только на билд) ---
-RUN --mount=type=cache,target=/root/.m2,sharing=locked \
-    set -eux; \
-    cd /opt/hibench; \
-    export JAVA_HOME=/opt/java8; export PATH="$JAVA_HOME/bin:$PATH"; \
-    java -version; mvn -version; \
-    mvn -s /opt/hibench/maven-settings.xml -B -U -DskipTests -T 1C \
-        -pl common,sparkbench -am dependency:go-offline; \
-    mvn -s /opt/hibench/maven-settings.xml -B    -DskipTests -T 1C \
-        -pl common,sparkbench -am clean package
+# --- Копируем фиксированные версии файлов (если у тебя есть) ---
+COPY fix/execute_with_log.py /opt/hibench/bin/functions/execute_with_log.py
+COPY fix/terminalsize.py     /opt/hibench/bin/functions/terminalsize.py
+COPY fix/load_config.py      /opt/hibench/bin/functions/load_config.py
 
 # --- Конфиги HiBench ---
-WORKDIR /opt/hibench
 COPY conf/hibench.conf conf/hibench.conf
 COPY conf/spark.conf   conf/spark.conf
 
-# --- Наши утилиты: JavaWordCount-бенч и парсер CSV ---
+# --- Утилиты: JavaWordCount и парсер CSV ---
 COPY scripts/wordcount_runs_java.sh /usr/local/bin/wordcount_runs_java.sh
 COPY scripts/parse_report_to_csv.py /usr/local/bin/parse_report_to_csv.py
 RUN chmod +x /usr/local/bin/wordcount_runs_java.sh /usr/local/bin/parse_report_to_csv.py
