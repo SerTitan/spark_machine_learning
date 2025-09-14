@@ -1,0 +1,1000 @@
+  781  pat_probe = re.compile(r"(?ms)^\s*def\s+probe_masters_slaves_hostnames\s*\(.*?\):.*?(?=^\s*def\s|\Z)")
+  782  s = pat_probe.sub(
+  783  , s)
+  784  # ---- подчистка возможных артефактов .os.path.join ----
+  785  for q in ('\"', \"'\"):
+  786  lcfg_path.write_text(s)
+  787  print(\"OK: load_config.py patched at\", lcfg_path)
+  788  PY
+  789  '
+  790  # Патчим строго по фиксированным путям (без переменных и без вложенных кавычек)
+  791  docker exec -i hibench python3 - <<'PY'
+  792  from pathlib import Path
+  793  import re, sys
+  794  LCFG = Path('/opt/hibench/bin/functions/load_config.py')
+  795  WFNS = Path('/opt/hibench/bin/functions/workload_functions.sh')
+  796  # --- check files exist ---
+  797  for p in (LCFG, WFNS):
+  798      if not p.exists():
+  799          print(f'ERROR: not found: {p}', file=sys.stderr)
+  800          sys.exit(1)
+  801  s = LCFG.read_text()
+  802  # 0) shebang + import sys в самом верху
+  803  if not s.startswith('#!'):
+  804      s = '#!/usr/bin/env python3\n' + s
+  805  if not re.search(r'(?m)^\s*import\s+sys\b', s):
+  806      lines = s.splitlines()
+  807      lines.insert(1, 'import sys')
+  808      s = '\n'.join(lines) + '\n'
+  809  # 1) Нормальный log() → пишет в stderr (сносим все старые варианты)
+  810  pat_log = re.compile(r'(?ms)^\s*def\s+log\s*\(.*?\):.*?(?=^\s*def\s|\Z)')
+  811  s = pat_log.sub(
+  812      "def log(*x):\n"
+  813      "    import sys\n"
+  814      "    try:\n"
+  815      "        sys.stderr.write(' '.join(str(v) for v in x) + '\\n')\n"
+  816      "    except Exception:\n"
+  817      "        sys.stderr.write(str(x) + '\\n')\n",
+  818      s,
+  819  )
+  820  # 2) Глобальные словари конфигурации
+  821  if 'HibenchConf =' not in s:
+  822      s = s.replace('import sys\n', 'import sys\nHibenchConf = {}\n', 1)
+  823  if 'HibenchConfRef =' not in s:
+  824      s = s.replace('HibenchConf = {}\n', 'HibenchConf = {}\nHibenchConfRef = {}\n', 1)
+  825  # 3) Базовые импорты (добавим, если нет)
+  826  def need(line): return re.search(rf'(?m)^\s*{re.escape(line)}\b', s) is None
+  827  imports = []
+  828  for line in [
+  829      'import glob',
+  830      'import re',
+  831      'from contextlib import closing',
+  832      'import socket',
+  833      'import urllib.request, urllib.parse, urllib.error',
+  834      'from collections import defaultdict',
+  835      'from os.path import join',
+  836  ]:
+  837      if need(line): imports.append(line)
+  838  if imports:
+  839      lines = s.splitlines()
+  840      # вставим сразу после import sys / глобалов
+  841      insert_at = 1
+  842      if len(lines) > 1 and lines[1].strip().startswith('import sys'): insert_at = 2
+  843      if len(lines) > 2 and lines[2].strip().startswith('HibenchConf ='): insert_at = 4
+  844      lines[insert_at:insert_at] = imports
+  845      s = '\n'.join(lines) + '\n'
+  846  # 4) Корректный импорт мэппингов (убираем старые «from … import …», вставляем try/fallback)
+  847  s = re.sub(r'(?m)^\s*from\s+(?:functions\.)?hibench_prop_env_mapping\s+import\s+.*\n', '', s)
+  848  if 'HiBenchEnvPropMapping' not in s:
+  849      add = [
+  850          'try:',
+  851          '    from hibench_prop_env_mapping import (',
+  852          '        HiBenchEnvPropMapping, HiBenchEnvPropMappingMandatory,',
+  853          '        HiBenchPropEnvMapping, HiBenchPropEnvMappingMandatory',
+  854          '    )',
+  855          'except Exception:',
+  856          '    import importlib.util, pathlib as _pl',
+  857          "    _p = _pl.Path(__file__).parent / 'hibench_prop_env_mapping.py'",
+  858          "    _spec = importlib.util.spec_from_file_location('hibench_prop_env_mapping', str(_p))",
+  859          '    _m = importlib.util.module_from_spec(_spec)',
+  860          '    _spec.loader.exec_module(_m)',
+  861          '    HiBenchEnvPropMapping = _m.HiBenchEnvPropMapping',
+  862          '    HiBenchEnvPropMappingMandatory = _m.HiBenchEnvPropMappingMandatory',
+  863          '    HiBenchPropEnvMapping = _m.HiBenchPropEnvMapping',
+  864          '    HiBenchPropEnvMappingMandatory = _m.HiBenchPropEnvMappingMandatory',
+  865          ''
+  866      ]
+  867      lines = s.splitlines()
+  868      insert_at = 1
+  869      if len(lines) > 1 and lines[1].strip().startswith('import sys'): insert_at = 2
+  870      if len(lines) > 2 and lines[2].strip().startswith('HibenchConf ='): insert_at = 4
+  871      lines[insert_at:insert_at] = add
+  872      s = '\n'.join(lines) + '\n'
+  873  # 5) Перевод "болтовни" в stderr через log()
+  874  for a,b in [
+  875      ('print("Parsing conf:', 'log("Parsing conf:'),
+  876      ("print('Parsing conf:", "log('Parsing conf:"),
+  877      ('print("probe sleep jar:', 'log("probe sleep jar:'),
+  878      ("print('probe sleep jar:", "log('probe sleep jar:"),
+  879  ]:
+  880      s = s.replace(a, b)
+  881  # 6) Простой и безопасный execute_cmd (stdout/stderr строки, с timeout)
+  882  pat_exec = re.compile(r'(?ms)^\s*def\s+execute_cmd\s*\(.*?\):.*?(?=^\s*def\s|\Z)')
+  883  s = pat_exec.sub(
+  884      "def execute_cmd(cmdline, timeout):\n"
+  885      "    import subprocess\n"
+  886      "    try:\n"
+  887      "        cp = subprocess.run(cmdline, shell=True,\n"
+  888      "                            stdout=subprocess.PIPE, stderr=subprocess.PIPE,\n"
+  889      "                            timeout=timeout, text=True, encoding='utf-8', errors='ignore')\n"
+  890      "        return cp.returncode, cp.stdout or '', cp.stderr or ''\n"
+  891      "    except subprocess.TimeoutExpired as e:\n"
+  892      "        try:\n"
+  893      "            if e.stdout is None: e.stdout = ''\n"
+  894      "            if e.stderr is None: e.stderr = ''\n"
+  895      "        except Exception:\n"
+  896      "            pass\n"
+  897      "        return -1, (e.stdout or ''), (e.stderr or '')\n",
+  898      s,
+  899  )
+  900  # 7) Если мастера/слейвы уже заданы в конфиге — не пробуем Yarn
+  901  pat_probe = re.compile(r'(?ms)^\s*def\s+probe_masters_slaves_hostnames\s*\(.*?\):.*?(?=^\s*def\s|\Z)')
+  902  s = pat_probe.sub(
+  903      "def probe_masters_slaves_hostnames():\n"
+  904      "    if HibenchConf.get('hibench.masters.hostnames') and HibenchConf.get('hibench.slaves.hostnames'):\n"
+  905      "        return\n"
+  906      "    try:\n"
+  907      "        probe_masters_slaves_by_Yarn(); return\n"
+  908      "    except Exception as e:\n"
+  909      "        log('skip yarn probe:', e)\n"
+  910      "    try:\n"
+  911      "        probe_masters_slaves_by_Spark(); return\n"
+  912      "    except Exception as e:\n"
+  913      "        log('skip spark probe:', e)\n",
+  914      s,
+  915  )
+  916  # 8) Подчистка артефактов от неудачных замен .join
+  917  for q in ('"', "'"):
+  918      s = s.replace(f"{q}.os.path.os.path.join(", f"{q}.join(")
+  919      s = s.replace(f"{q}.os.path.join(", f"{q}.join(")
+  920  LCFG.write_text(s)
+  921  # ---- правка workload_functions.sh: echo "patching args=" в stderr ----
+  922  w = WFNS.read_text()
+  923  w = re.sub(r'(?m)^(?P<prefix>\s*echo\s+patching args=)(?!.*1>&2).*$', r"\g<prefix> 1>&2", w)
+  924  WFNS.write_text(w)
+  925  print("OK: patched", LCFG, "and", WFNS)
+  926  PY
+  927  # Проверка синтаксиса и того, что парсер печатает путь к env в STDOUT
+  928  docker exec -it hibench bash -lc '
+  929    set -euo pipefail
+  930    python3 -m py_compile /opt/hibench/bin/functions/load_config.py && echo "syntax OK"
+  931    echo "[test] run load_config to get env path (stdout only):"
+  932    python3 /opt/hibench/bin/functions/load_config.py \
+  933      /opt/hibench/conf \
+  934      /opt/hibench/conf/workloads/micro/wordcount.conf \
+  935      micro/wordcount "" | head -n 1
+  936    echo "[prepare] generating HDFS input…"
+  937    /opt/hibench/bin/workloads/micro/wordcount/prepare/prepare.sh
+  938    echo "=== HDFS input sample ==="
+  939    hdfs dfs -ls -R /HiBench/Wordcount | head -n 30 || true
+  940    echo "[run] spark wordcount…"
+  941    /opt/hibench/bin/workloads/micro/wordcount/spark/run.sh
+  942    echo "=== HiBench report (head) ==="
+  943    sed -n "1,120p" /opt/hibench/report/hibench.report || true
+  944  '
+  945  # --- ШИМ вместо load_config.py + минимальный env для wordcount ---
+  946  docker exec -i hibench bash -lc 'set -euo pipefail
+  947  # 1) Подменяем /opt/hibench/bin/functions/load_config.py на простой shim
+  948  cat > /opt/hibench/bin/functions/load_config.py <<'"PY"'
+  949  #!/usr/bin/env python3
+  950  import sys, os
+  951  from pathlib import Path
+  952  def log(*x):  # на всякий случай — всё в stderr
+  953      try: sys.stderr.write(" ".join(str(v) for v in x) + "\n")
+  954      except Exception: sys.stderr.write(str(x) + "\n")
+  955  def main():
+  956      if len(sys.argv) < 4:
+  957          log("usage: load_config.py <conf_root> <workload_conf> <workload_folder> <patching_config>")
+  958          sys.exit(2)
+  959      conf_root, workload_conf, workload_folder = sys.argv[1], sys.argv[2], sys.argv[3]
+  960      # Стандартное место для env-файла HiBench:
+  961      env_dir  = Path("/opt/hibench/report") / workload_folder / "conf"
+  962      env_file = env_dir / ("micro.conf" if "micro/" in workload_folder else "workload.conf")
+  963      env_dir.mkdir(parents=True, exist_ok=True)
+  964      # Если env ещё не существует — создадим минимально достаточный для wordcount
+  965      if not env_file.exists():
+  966          # пути и мастера
+  967          hdfs_master   = os.environ.get("HIBENCH_HDFS_MASTER", "hdfs://namenode:8020")
+  968          spark_master  = os.environ.get("SPARK_MASTER_URL",  "spark://spark-master:7077")
+  969          spark_home    = os.environ.get("SPARK_HOME",        "/opt/spark")
+  970          hadoop_home   = os.environ.get("HADOOP_HOME",       "/opt/hadoop")
+  971          # вход/выход wordcount
+  972          input_hdfs    = "/HiBench/Wordcount/Input"
+  973          output_hdfs   = "/HiBench/Wordcount/Output"
+  974          # jar для prepare (в Bitnami Hadoop 3.3.6 путь такой)
+  975          hadoop_tests_jar = "/opt/hadoop/share/hadoop/mapreduce/hadoop-mapreduce-client-jobclient-3.3.6-tests.jar"
+  976          with env_file.open("w") as f:
+  977              f.write("# Auto-generated minimal env for HiBench wordcount\n")
+  978              f.write(f'HDFS_MASTER="{hdfs_master}"\n')
+  979              f.write(f'SPARK_HOME="{spark_home}"\n')
+  980              f.write(f'SPARK_MASTER="{spark_master}"\n')
+  981              f.write(f'HADOOP_HOME="{hadoop_home}"\n')
+  982              f.write(f'HADOOP_EXAMPLES_TEST_JAR="{hadoop_tests_jar}"\n')
+  983              f.write(f'INPUT_HDFS="{input_hdfs}"\n')
+  984              f.write(f'OUTPUT_HDFS="{output_hdfs}"\n')
+  985              # разумные дефолты для размера и партиций (не критично)
+  986              f.write('DATA_SCALE="tiny"\n')
+  987              f.write('NUM_PARTITIONS=4\n')
+  988      # НИЧЕГО, кроме пути — именно так ожидает workload_functions.sh: ". $(python ...)"
+  989      print(str(env_file))
+  990  if __name__ == "__main__":
+  991      main()
+  992  "PY"
+  993  chmod +x /opt/hibench/bin/functions/load_config.py
+  994  # 2) Убедимся, что оболочка-обёртка не засоряет stdout "patching args=" и т.п.
+  995  # (если строка уже с редиректом — ничего не меняем)
+  996  if [ -f /opt/hibench/bin/functions/workload_functions.sh ]; then
+  997    sed -i -E "s/^(\\s*echo\\s+patching args=.*)([^>]|$)/\\1 1\\>\\&2/;" /opt/hibench/bin/functions/workload_functions.sh || true
+  998  fi
+  999  # 3) sanity: питон синтаксис
+ 1000  python3 -m py_compile /opt/hibench/bin/functions/load_config.py
+ 1001  echo "shim ready"
+ 1002  '
+ 1003  # --- ШИМ вместо load_config.py + минимальный env для wordcount ---
+ 1004  docker exec -i hibench bash -lc 'set -euo pipefail
+ 1005  # 1) Подменяем /opt/hibench/bin/functions/load_config.py на простой shim
+ 1006  cat > /opt/hibench/bin/functions/load_config.py <<'"PY"'
+ 1007  #!/usr/bin/env python3
+ 1008  import sys, os
+ 1009  from pathlib import Path
+ 1010  def log(*x):  # на всякий случай — всё в stderr
+ 1011      try: sys.stderr.write(" ".join(str(v) for v in x) + "\n")
+ 1012      except Exception: sys.stderr.write(str(x) + "\n")
+ 1013  def main():
+ 1014      if len(sys.argv) < 4:
+ 1015          log("usage: load_config.py <conf_root> <workload_conf> <workload_folder> <patching_config>")
+ 1016          sys.exit(2)
+ 1017      conf_root, workload_conf, workload_folder = sys.argv[1], sys.argv[2], sys.argv[3]
+ 1018      # Стандартное место для env-файла HiBench:
+ 1019      env_dir  = Path("/opt/hibench/report") / workload_folder / "conf"
+ 1020      env_file = env_dir / ("micro.conf" if "micro/" in workload_folder else "workload.conf")
+ 1021      env_dir.mkdir(parents=True, exist_ok=True)
+ 1022      # Если env ещё не существует — создадим минимально достаточный для wordcount
+ 1023      if not env_file.exists():
+ 1024          # пути и мастера
+ 1025          hdfs_master   = os.environ.get("HIBENCH_HDFS_MASTER", "hdfs://namenode:8020")
+ 1026          spark_master  = os.environ.get("SPARK_MASTER_URL",  "spark://spark-master:7077")
+ 1027          spark_home    = os.environ.get("SPARK_HOME",        "/opt/spark")
+ 1028          hadoop_home   = os.environ.get("HADOOP_HOME",       "/opt/hadoop")
+ 1029          # вход/выход wordcount
+ 1030          input_hdfs    = "/HiBench/Wordcount/Input"
+ 1031          output_hdfs   = "/HiBench/Wordcount/Output"
+ 1032          # jar для prepare (в Bitnami Hadoop 3.3.6 путь такой)
+ 1033          hadoop_tests_jar = "/opt/hadoop/share/hadoop/mapreduce/hadoop-mapreduce-client-jobclient-3.3.6-tests.jar"
+ 1034          with env_file.open("w") as f:
+ 1035              f.write("# Auto-generated minimal env for HiBench wordcount\n")
+ 1036              f.write(f'HDFS_MASTER="{hdfs_master}"\n')
+ 1037              f.write(f'SPARK_HOME="{spark_home}"\n')
+ 1038              f.write(f'SPARK_MASTER="{spark_master}"\n')
+ 1039              f.write(f'HADOOP_HOME="{hadoop_home}"\n')
+ 1040              f.write(f'HADOOP_EXAMPLES_TEST_JAR="{hadoop_tests_jar}"\n')
+ 1041              f.write(f'INPUT_HDFS="{input_hdfs}"\n')
+ 1042              f.write(f'OUTPUT_HDFS="{output_hdfs}"\n')
+ 1043              # разумные дефолты для размера и партиций (не критично)
+ 1044              f.write('DATA_SCALE="tiny"\n')
+ 1045              f.write('NUM_PARTITIONS=4\n')
+ 1046      # НИЧЕГО, кроме пути — именно так ожидает workload_functions.sh: ". $(python ...)"
+ 1047      print(str(env_file))
+ 1048  if __name__ == "__main__":
+ 1049      main()
+ 1050  "PY"
+ 1051  chmod +x /opt/hibench/bin/functions/load_config.py
+ 1052  # 2) Убедимся, что оболочка-обёртка не засоряет stdout "patching args=" и т.п.
+ 1053  # (если строка уже с редиректом — ничего не меняем)
+ 1054  if [ -f /opt/hibench/bin/functions/workload_functions.sh ]; then
+ 1055    sed -i -E "s/^(\\s*echo\\s+patching args=.*)([^>]|$)/\\1 1\\>\\&2/;" /opt/hibench/bin/functions/workload_functions.sh || true
+ 1056  fi
+ 1057  # 3) sanity: питон синтаксис
+ 1058  python3 -m py_compile /opt/hibench/bin/functions/load_config.py
+ 1059  echo "shim ready"
+ 1060  '
+ 1061  docker exec -it hibench bash -lc '
+ 1062    set -euo pipefail
+ 1063    echo "[test] load_config prints env path:"
+ 1064    python3 /opt/hibench/bin/functions/load_config.py \
+ 1065      /opt/hibench/conf \
+ 1066      /opt/hibench/conf/workloads/micro/wordcount.conf \
+ 1067      micro/wordcount "" | tee /tmp/env_path.txt
+ 1068    ENV_PATH="$(cat /tmp/env_path.txt)"
+ 1069    echo "[env file]"
+ 1070    sed -n "1,50p" "$ENV_PATH" || true
+ 1071    echo "[prepare] generating HDFS input…"
+ 1072    /opt/hibench/bin/workloads/micro/wordcount/prepare/prepare.sh
+ 1073    echo "=== HDFS input sample ==="
+ 1074    hdfs dfs -ls -R /HiBench/Wordcount | head -n 30 || true
+ 1075    echo "[run] spark wordcount…"
+ 1076    /opt/hibench/bin/workloads/micro/wordcount/spark/run.sh
+ 1077    echo "=== HiBench report (head) ==="
+ 1078    sed -n "1,120p" /opt/hibench/report/hibench.report || true
+ 1079  '
+ 1080  chmod +x bin/hibench_auto_fix.sh
+ 1081  git commit
+ 1082  git push
+ 1083  docker compose build
+ 1084  docker compose up -d
+ 1085  ./bin/up_all_and_check.sh
+ 1086  docker compose build hibench
+ 1087  docker compose up -d
+ 1088  ./bin/hibench_auto_fix.sh
+ 1089  docker exec -it hibench bash -lc 'wordcount_9runs.sh'
+ 1090  docker cp hibench/scripts/wordcount_9runs.sh hibench:/usr/local/bin/wordcount_9runs.sh
+ 1091  docker exec -it hibench bash -lc 'chmod +x /usr/local/bin/wordcount_9runs.sh'
+ 1092  docker exec -it hibench bash -lc 'wordcount_9runs.sh'
+ 1093  docker cp hibench/scripts/wordcount_9runs.sh hibench:/usr/local/bin/wordcount_9runs.sh
+ 1094  docker exec -it hibench bash -lc 'chmod +x /usr/local/bin/wordcount_9runs.sh'
+ 1095  docker exec -it hibench bash -lc 'wordcount_9runs.sh'
+ 1096  docker cp hibench/scripts/wordcount_9runs.sh hibench:/usr/local/bin/wordcount_9runs.sh
+ 1097  docker exec -it hibench bash -lc 'chmod +x /usr/local/bin/wordcount_9runs.sh'
+ 1098  docker exec -it hibench bash -lc 'wordcount_9runs.sh'
+ 1099  docker exec -it hibench bash -lc '
+ 1100    apt-get update
+ 1101    apt-get install -y python2
+ 1102    ln -sf /usr/bin/python2 /usr/local/bin/python
+ 1103  '
+ 1104  docker exec -it hibench bash -lc 'wordcount_9runs.sh'
+ 1105  ./bin/hibench_auto_fix.sh
+ 1106  docker cp hibench/scripts/wordcount_9runs.sh hibench:/usr/local/bin/wordcount_9runs.sh
+ 1107  docker exec -it hibench bash -lc 'chmod +x /usr/local/bin/wordcount_9runs.sh'
+ 1108  docker exec -it hibench bash -lc 'wordcount_9runs.sh'
+ 1109  docker cp hibench/scripts/wordcount_9runs.sh     hibench:/usr/local/bin/wordcount_9runs.sh
+ 1110  docker cp hibench/scripts/parse_report_to_csv.py hibench:/usr/local/bin/parse_report_to_csv.py
+ 1111  docker exec -it hibench bash -lc 'chmod +x /usr/local/bin/wordcount_9runs.sh /usr/local/bin/parse_report_to_csv.py'
+ 1112  docker exec -it hibench bash -lc 'wordcount_9runs.sh'
+ 1113  docker exec -it namenode bash -lc 'hdfs dfs -ls -h /HiBench/Wordcount/Input | sed -n "1,5p"'
+ 1114  docker cp hibench/scripts/wordcount_9runs.sh hibench:/usr/local/bin/wordcount_9runs.sh
+ 1115  docker exec -it hibench bash -lc 'chmod +x /usr/local/bin/wordcount_9runs.sh'
+ 1116  docker exec -it hibench bash -lc 'hdfs dfs -fs hdfs://namenode:8020 -ls /'
+ 1117  # 1) Доставить Hadoop-клиент в контейнер hibench
+ 1118  docker exec -it hibench bash -lc '
+ 1119    set -euo pipefail
+ 1120    HURL="https://downloads.apache.org/hadoop/common/hadoop-3.3.6/hadoop-3.3.6.tar.gz"
+ 1121    if [ ! -x /opt/hadoop/bin/hdfs ]; then
+ 1122      echo "[*] Installing Hadoop client into /opt ..."
+ 1123      apt-get update >/dev/null
+ 1124      apt-get install -y curl tar >/dev/null
+ 1125      curl -fsSL "$HURL" -o /tmp/hadoop.tgz
+ 1126      tar -xzf /tmp/hadoop.tgz -C /opt
+ 1127      ln -sfn /opt/hadoop-3.3.6 /opt/hadoop
+ 1128    fi
+ 1129    # 2) Экспорт переменных окружения на будущее
+ 1130    grep -q "export HADOOP_HOME=" /etc/profile.d/hadoop.sh 2>/dev/null || cat >/etc/profile.d/hadoop.sh <<EOF
+ 1131  export HADOOP_HOME=/opt/hadoop
+ 1132  export HADOOP_CONF_DIR=/opt/hadoop/etc/hadoop
+ 1133  export PATH=\$HADOOP_HOME/bin:\$HADOOP_HOME/sbin:\$PATH
+ 1134  EOF
+ 1135    . /etc/profile.d/hadoop.sh
+ 1136    echo "[*] Check hdfs:"
+ 1137    which hdfs || true
+ 1138    hdfs version || true
+ 1139  '
+ 1140  docker exec -it hibench bash -lc 'hdfs dfs -fs hdfs://namenode:8020 -ls / | head'
+ 1141  docker compose build hibench
+ 1142  docker compose up -d
+ 1143  ./bin/up_all_and_check.sh
+ 1144  docker exec -it hibench bash -lc 'wordcount_9runs.sh'
+ 1145  docker exec -it hibench bash -lc 'python3 /usr/local/bin/parse_report_to_csv.py'
+ 1146  docker cp hibench/scripts/wordcount_9runs.sh hibench:/usr/local/bin/wordcount_9runs.sh
+ 1147  docker exec -it hibench bash -lc 'chmod +x /usr/local/bin/wordcount_9runs.sh'
+ 1148  docker exec -it hibench bash -lc 'wordcount_9runs.sh'
+ 1149  docker exec -it hibench bash -lc 'tail -n 50 /opt/hibench/report/hibench.report || true'
+ 1150  docker exec -it hibench bash -lc 'tail -n 50 /tmp/wc_runs.txt || true'
+ 1151  docker cp hibench/scripts/wordcount_9runs.sh hibench:/usr/local/bin/wordcount_9runs.sh
+ 1152  docker exec -it hibench bash -lc 'chmod +x /usr/local/bin/wordcount_9runs.sh'
+ 1153  docker exec -it hibench bash -lc 'RUNS=1 wordcount_9runs.sh || true'
+ 1154  docker exec -it hibench bash -lc 'ls -lh /tmp/wc_run_1.log && tail -n 80 /tmp/wc_run_1.log'
+ 1155  docker cp hibench/scripts/wordcount_9runs.sh hibench:/usr/local/bin/wordcount_9runs.sh
+ 1156  docker exec -it hibench bash -lc 'chmod +x /usr/local/bin/wordcount_9runs.sh'
+ 1157  ocker exec -it hibench bash -lc 'RUNS=1 wordcount_9runs.sh || true'
+ 1158  docker exec -it hibench bash -lc 'RUNS=1 wordcount_9runs.sh || true'
+ 1159  docker exec -it hibench bash -lc 'ls -lh /tmp/wc_run_1.log && tail -n 80 /tmp/wc_run_1.log'
+ 1160  docker exec -it hibench bash -lc 'ls -l /opt/bitnami/spark/examples/jars/ | grep spark-examples || true'
+ 1161  docker exec -it hibench bash -lc '
+ 1162    set -euo pipefail
+ 1163    export JAVA_HOME=/opt/bitnami/java
+ 1164    export PATH="$JAVA_HOME/bin:/opt/bitnami/spark/bin:/opt/hadoop/bin:$PATH"
+ 1165    echo "alpha beta gamma" > /tmp/wc_input.txt
+ 1166    /opt/hadoop/bin/hdfs dfs -fs hdfs://namenode:8020 -rm -r -f -skipTrash /HiBench/Wordcount/Input || true
+ 1167    /opt/hadoop/bin/hdfs dfs -fs hdfs://namenode:8020 -mkdir -p /HiBench/Wordcount/Input
+ 1168    /opt/hadoop/bin/hdfs dfs -fs hdfs://namenode:8020 -put -f /tmp/wc_input.txt /HiBench/Wordcount/Input/part-00000
+ 1169    /opt/hadoop/bin/hdfs dfs -fs hdfs://namenode:8020 -ls -h /HiBench/Wordcount/Input | sed -n "1,5p"
+ 1170  '
+ 1171  docker exec -it hibench bash -lc '
+ 1172    set -euo pipefail
+ 1173    export JAVA_HOME=/opt/bitnami/java
+ 1174    export PATH="$JAVA_HOME/bin:/opt/bitnami/spark/bin:/opt/hadoop/bin:$PATH"
+ 1175    JAR=$(ls -1 /opt/bitnami/spark/examples/jars/spark-examples_2.12-3.*.jar | head -n1)
+ 1176    echo "[*] Using JAR: $JAR"
+ 1177    LOG=/tmp/wc_java_1.log
+ 1178    /opt/bitnami/spark/bin/spark-submit \
+ 1179      --master spark://spark-master:7077 \
+ 1180      --class org.apache.spark.examples.JavaWordCount \
+ 1181      "$JAR" hdfs://namenode:8020/HiBench/Wordcount/Input \
+ 1182      >"$LOG" 2>&1 || true
+ 1183    echo "[*] Exit code: $?"
+ 1184    tail -n 80 "$LOG" || true
+ 1185  '
+ 1186  docker exec -it hibench bash -lc '
+ 1187    set -euo pipefail
+ 1188    export JAVA_HOME=/opt/bitnami/java
+ 1189    export PATH="$JAVA_HOME/bin:/opt/bitnami/spark/bin:/opt/hadoop/bin:$PATH"
+ 1190    JAR=$(ls -1 /opt/bitnami/spark/examples/jars/spark-examples_2.12-3.*.jar | head -n1)
+ 1191    REPORT=/opt/hibench/report/hibench.report
+ 1192    RUNS=/tmp/wc_runs.txt
+ 1193    SCALE=${DATASIZE:-tiny}
+ 1194    echo -e "Benchmark\tEngine\tScale\tDuration(s)" > "$REPORT"
+ 1195    : > "$RUNS"
+ 1196    for i in $(seq 1 9); do
+ 1197      echo "[*] Run $i/9 ..."
+ 1198      start_ns=$(date +%s%N)
+ 1199      /opt/bitnami/spark/bin/spark-submit \
+ 1200        --master spark://spark-master:7077 \
+ 1201        --class org.apache.spark.examples.JavaWordCount \
+ 1202        "$JAR" hdfs://namenode:8020/HiBench/Wordcount/Input \
+ 1203        >/tmp/wc_java_$i.log 2>&1
+ 1204      rc=$?
+ 1205      end_ns=$(date +%s%N)
+ 1206      dur_ms=$(( (end_ns - start_ns) / 1000000 ))
+ 1207      dur_sec=$(python3 - <<PY
+ 1208  d=$dur_ms/1000.0
+ 1209  print(f"{d:.3f}")
+ 1210  PY
+ 1211  )
+ 1212      if [ $rc -ne 0 ]; then
+ 1213        echo "[ERR] failed run $i, rc=$rc"; tail -n 60 /tmp/wc_java_$i.log; exit $rc
+ 1214      fi
+ 1215      echo "WordCount,Spark,${SCALE},${dur_sec}" >> "$RUNS"
+ 1216      printf "WordCount\tSpark\t%s\t%s\n" "$SCALE" "$dur_sec" >> "$REPORT"
+ 1217    done
+ 1218    echo "[*] Done. Tail wc_runs:"
+ 1219    tail -n 5 "$RUNS" || true
+ 1220  '
+ 1221  chmod +x bin/run_wordcount_pipeline.sh
+ 1222  docker compose build hibench
+ 1223  docker compose up -d
+ 1224  ./bin/up_all_and_check.sh
+ 1225  RUNS=9 NUM_LINES=500000 SCALE=tiny ./bin/run_wordcount_pipeline.sh
+ 1226  docker compose build hibench
+ 1227  docker compose up -d
+ 1228  RUNS=9 NUM_LINES=500000 SCALE=tiny ./bin/run_wordcount_pipeline.sh
+ 1229  docker logs spark-master --tail=100
+ 1230  docker inspect --format='{{json .State.Health}}' spark-master | jq
+ 1231  docker exec -it hibench bash -lc 'hdfs dfs -fs hdfs://namenode:8020 -ls -h /HiBench/Wordcount/Input | sed -n "1,10p"'
+ 1232  docker exec -it hibench bash -lc 'ls -l /opt/hadoop/bin/hdfs || echo "NO_HDFS_BINARY"'
+ 1233  docker exec -it hibench bash -lc '/opt/hadoop/bin/hdfs dfs -fs hdfs://namenode:8020 -ls -h / | sed -n "1,10p"'
+ 1234  docker exec -it hibench bash -lc '/opt/hadoop/bin/hdfs dfs -fs hdfs://namenode:8020 -ls -h /HiBench/Wordcount/Input | sed -n "1,10p"'
+ 1235  echo "[2] Run WordCount x$RUNS (NUM_LINES=$NUM_LINES, SCALE=$SCALE)…"
+ 1236  docker exec -i hibench bash -lc   "RUNS='$RUNS' NUM_LINES='$NUM_LINES' DATASIZE='$SCALE' SPARK_CONF=\"$SPARK_CONF\" wordcount_runs_java.sh"
+ 1237  RUNS=9 NUM_LINES=500000 SCALE=tiny ./bin/run_wordcount_pipeline.sh
+ 1238  docker exec -it hibench bash -lc '
+ 1239    set -euo pipefail
+ 1240    echo "[env] java & paths"
+ 1241    export JAVA_HOME=/opt/bitnami/java
+ 1242    export PATH="$JAVA_HOME/bin:/opt/bitnami/spark/bin:/opt/hadoop/bin:$PATH"
+ 1243    /opt/bitnami/java/bin/java -version >/dev/null
+ 1244    echo "[hdfs] prepare input (NUM_LINES=500000)"
+ 1245    yes "lorem ipsum dolor sit amet consectetur adipiscing elit" | head -n 500000 > /tmp/wc_input.txt
+ 1246    /opt/hadoop/bin/hdfs dfs -fs hdfs://namenode:8020 -rm -r -f -skipTrash /HiBench/Wordcount/Input || true
+ 1247    /opt/hadoop/bin/hdfs dfs -fs hdfs://namenode:8020 -mkdir -p /HiBench/Wordcount/Input
+ 1248    /opt/hadoop/bin/hdfs dfs -fs hdfs://namenode:8020 -put -f /tmp/wc_input.txt /HiBench/Wordcount/Input/part-00000
+ 1249    /opt/hadoop/bin/hdfs dfs -fs hdfs://namenode:8020 -ls -h /HiBench/Wordcount/Input | sed -n "1,5p"
+ 1250    echo "[spark] 3 runs JavaWordCount"
+ 1251    JAR=$(ls -1 /opt/bitnami/spark/examples/jars/spark-examples_2.12-3.*.jar | head -n1)
+ 1252    : > /tmp/wc_runs.txt
+ 1253    echo -e "Benchmark\tEngine\tScale\tDuration(s)" > /opt/hibench/report/hibench.report
+ 1254    for i in 1 2 3; do
+ 1255      echo "[*] run $i/3 ..."
+ 1256      start_ns=$(date +%s%N)
+ 1257      set +e
+ 1258      /opt/bitnami/spark/bin/spark-submit \
+ 1259        --master spark://spark-master:7077 \
+ 1260        --class org.apache.spark.examples.JavaWordCount \
+ 1261        "$JAR" hdfs://namenode:8020/HiBench/Wordcount/Input \
+ 1262        >/tmp/wc_java_$i.log 2>&1
+ 1263      rc=$?
+ 1264      set -e
+ 1265      end_ns=$(date +%s%N); dur_ms=$(( (end_ns - start_ns)/1000000 ))
+ 1266      dur_sec=$(python3 - <<PY
+ 1267  d=$dur_ms/1000.0
+ 1268  print(f"{d:.3f}")
+ 1269  PY
+ 1270  )
+ 1271      if [ $rc -ne 0 ]; then
+ 1272        echo "[ERR] run $i failed (rc=$rc). Tail:"
+ 1273        tail -n 80 /tmp/wc_java_$i.log || true
+ 1274        exit $rc
+ 1275      fi
+ 1276      echo "WordCount,Spark,tiny,${dur_sec}" >> /tmp/wc_runs.txt
+ 1277      printf "WordCount\tSpark\ttiny\t%s\n" "$dur_sec" >> /opt/hibench/report/hibench.report
+ 1278      echo "    OK $i: ${dur_sec}s"
+ 1279    done
+ 1280    echo "[tail] /tmp/wc_runs.txt"
+ 1281    tail -n +1 /tmp/wc_runs.txt
+ 1282    echo "[tail] hibench.report"
+ 1283    tail -n +1 /opt/hibench/report/hibench.report
+ 1284  '
+ 1285  docker exec -it hibench bash -lc '
+ 1286    set -euo pipefail
+ 1287    echo "[env] java & paths"
+ 1288    export JAVA_HOME=/opt/bitnami/java
+ 1289    export PATH="$JAVA_HOME/bin:/opt/bitnami/spark/bin:/opt/hadoop/bin:$PATH"
+ 1290    /opt/bitnami/java/bin/java -version >/dev/null
+ 1291    echo "[hdfs] prepare input (NUM_LINES=500000)"
+ 1292    yes "lorem ipsum dolor sit amet consectetur adipiscing elit" | head -n 500000 > /tmp/wc_input.txt
+ 1293    /opt/hadoop/bin/hdfs dfs -fs hdfs://namenode:8020 -rm -r -f -skipTrash /HiBench/Wordcount/Input || true
+ 1294    /opt/hadoop/bin/hdfs dfs -fs hdfs://namenode:8020 -mkdir -p /HiBench/Wordcount/Input
+ 1295    /opt/hadoop/bin/hdfs dfs -fs hdfs://namenode:8020 -put -f /tmp/wc_input.txt /HiBench/Wordcount/Input/part-00000
+ 1296    /opt/hadoop/bin/hdfs dfs -fs hdfs://namenode:8020 -ls -h /HiBench/Wordcount/Input | sed -n "1,5p"
+ 1297    echo "[spark] 3 runs JavaWordCount"
+ 1298    JAR=$(ls -1 /opt/bitnami/spark/examples/jars/spark-examples_2.12-3.*.jar | head -n1)
+ 1299    : > /tmp/wc_runs.txt
+ 1300    echo -e "Benchmark\tEngine\tScale\tDuration(s)" > /opt/hibench/report/hibench.report
+ 1301    for i in 1 2 3; do
+ 1302      echo "[*] run $i/3 ..."
+ 1303      start_ns=$(date +%s%N)
+ 1304      set +e
+ 1305      /opt/bitnami/spark/bin/spark-submit \
+ 1306        --master spark://spark-master:7077 \
+ 1307        --class org.apache.spark.examples.JavaWordCount \
+ 1308        "$JAR" hdfs://namenode:8020/HiBench/Wordcount/Input \
+ 1309        >/tmp/wc_java_$i.log 2>&1
+ 1310      rc=$?
+ 1311      set -e
+ 1312      end_ns=$(date +%s%N); dur_ms=$(( (end_ns - start_ns)/1000000 ))
+ 1313      dur_sec=$(python3 - <<PY
+ 1314  d=$dur_ms/1000.0
+ 1315  print(f"{d:.3f}")
+ 1316  PY
+ 1317  )
+ 1318      if [ $rc -ne 0 ]; then
+ 1319        echo "[ERR] run $i failed (rc=$rc). Tail:"
+ 1320        tail -n 80 /tmp/wc_java_$i.log || true
+ 1321        exit $rc
+ 1322      fi
+ 1323      echo "WordCount,Spark,tiny,${dur_sec}" >> /tmp/wc_runs.txt
+ 1324      printf "WordCount\tSpark\ttiny\t%s\n" "$dur_sec" >> /opt/hibench/report/hibench.report
+ 1325      echo "    OK $i: ${dur_sec}s"
+ 1326    done
+ 1327    echo "[tail] /tmp/wc_runs.txt"
+ 1328    tail -n +1 /tmp/wc_runs.txt
+ 1329    echo "[tail] hibench.report"
+ 1330    tail -n +1 /opt/hibench/report/hibench.report
+ 1331  '
+ 1332  git commit
+ 1333  docker exec -i hibench bash -lc 'cat >/tmp/manual_wc.sh << "EOF"
+ 1334  #!/usr/bin/env bash
+ 1335  set -euo pipefail
+ 1336  # env
+ 1337  export JAVA_HOME=/opt/bitnami/java
+ 1338  export PATH="$JAVA_HOME/bin:/opt/bitnami/spark/bin:/opt/hadoop/bin:$PATH"
+ 1339  JAR=$(ls -1 /opt/bitnami/spark/examples/jars/spark-examples_2.12-3.*.jar | head -n1)
+ 1340  HDFS_URI=${HDFS_URI:-hdfs://namenode:8020}
+ 1341  IN_DIR=/HiBench/Wordcount/Input
+ 1342  NUM_LINES=${NUM_LINES:-500000}
+ 1343  echo "[hdfs] prepare input ($NUM_LINES lines)…"
+ 1344  yes "lorem ipsum dolor sit amet consectetur adipiscing elit" | head -n "$NUM_LINES" > /tmp/wc_input.txt
+ 1345  /opt/hadoop/bin/hdfs dfs -fs "$HDFS_URI" -rm -r -f -skipTrash "$IN_DIR" || true
+ 1346  /opt/hadoop/bin/hdfs dfs -fs "$HDFS_URI" -mkdir -p "$IN_DIR"
+ 1347  /opt/hadoop/bin/hdfs dfs -fs "$HDFS_URI" -put -f /tmp/wc_input.txt "$IN_DIR/part-00000"
+ 1348  /opt/hadoop/bin/hdfs dfs -fs "$HDFS_URI" -ls -h "$IN_DIR" | sed -n "1,5p"
+ 1349  echo -e "Benchmark\tEngine\tScale\tDuration(s)" > /opt/hibench/report/hibench.report
+ 1350  : > /tmp/wc_runs.txt
+ 1351  echo "[spark] run JavaWordCount x3"
+ 1352  for i in 1 2 3; do
+ 1353    echo "[*] run $i/3 …"
+ 1354    start_ns=$(date +%s%N)
+ 1355    /opt/bitnami/spark/bin/spark-submit \
+ 1356      --master spark://spark-master:7077 \
+ 1357      --class org.apache.spark.examples.JavaWordCount \
+ 1358      "$JAR" "$HDFS_URI$IN_DIR" \
+ 1359      >/tmp/wc_java_$i.log 2>&1 \
+ 1360      || { echo "[ERR] run $i failed"; tail -n 80 /tmp/wc_java_$i.log; exit 1; }
+ 1361    end_ns=$(date +%s%N)
+ 1362    dur_ms=$(( (end_ns - start_ns)/1000000 ))
+ 1363    dur_sec=$(python3 - "$dur_ms" << "PY"
+ 1364  import sys
+ 1365  print(f"{int(sys.argv[1])/1000.0:.3f}")
+ 1366  PY
+ 1367  )
+ 1368    echo "WordCount,Spark,tiny,${dur_sec}" >> /tmp/wc_runs.txt
+ 1369    printf "WordCount\tSpark\ttiny\t%s\n" "$dur_sec" >> /opt/hibench/report/hibench.report
+ 1370  done
+ 1371  echo "[tail] /tmp/wc_runs.txt"; tail -n +1 /tmp/wc_runs.txt
+ 1372  echo "[tail] /opt/hibench/report/hibench.report"; tail -n +1 /opt/hibench/report/hibench.report
+ 1373  EOF
+ 1374  chmod +x /tmp/manual_wc.sh
+ 1375  bash /tmp/manual_wc.sh'
+ 1376  docker exec -it hibench bash -lc 'export JAVA_HOME=/opt/bitnami/java; export PATH="$JAVA_HOME/bin:/opt/bitnami/spark/bin:/opt/hadoop/bin:$PATH"; RUNS=3 NUM_LINES=500000 DATASIZE=tiny wordcount_runs_java.sh'
+ 1377  docker exec -it hibench bash -lc 'ls -lh /tmp/wc_java_*.log || true'
+ 1378  docker exec -it hibench bash -lc 'tail -n 80 /tmp/wc_java_1.log || true'
+ 1379  docker exec -it hibench bash -lc 'export JAVA_HOME=/opt/bitnami/java; export PATH="$JAVA_HOME/bin:/opt/bitnami/spark/bin:/opt/hadoop/bin:$PATH"; RUNS=9 NUM_LINES=500000 DATASIZE=tiny wordcount_runs_java.sh'
+ 1380  echo "[2] Run WordCount x$RUNS (NUM_LINES=$NUM_LINES, SCALE=$SCALE)…"
+ 1381  docker exec   -e RUNS="${RUNS:-9}"   -e NUM_LINES="${NUM_LINES:-500000}"   -e DATASIZE="${SCALE:-tiny}"   -e SPARK_CONF="${SPARK_CONF:-}"   -i hibench bash -lc '
+ 1382      set -euo pipefail
+ 1383      export JAVA_HOME=/opt/bitnami/java
+ 1384      export PATH="$JAVA_HOME/bin:/opt/bitnami/spark/bin:/opt/hadoop/bin:$PATH"
+ 1385      wordcount_runs_java.sh
+ 1386  '
+ 1387  git stash
+ 1388  docker compose build hibench
+ 1389  docker compose up -d
+ 1390  ./bin/up_all_and_check.sh
+ 1391  docker exec   -e RUNS="${RUNS:-9}"   -e NUM_LINES="${NUM_LINES:-500000}"   -e DATASIZE="${SCALE:-tiny}"   -e SPARK_CONF="${SPARK_CONF:-}"   -i hibench bash -lc '
+ 1392      set -euo pipefail
+ 1393      export JAVA_HOME=/opt/bitnami/java
+ 1394      export PATH="$JAVA_HOME/bin:/opt/bitnami/spark/bin:/opt/hadoop/bin:$PATH"
+ 1395      wordcount_runs_java.sh
+ 1396  '
+ 1397  RUNS=9 NUM_LINES=500000 SCALE=tiny ./bin/run_wordcount_pipeline.sh
+ 1398  docker stash pop
+ 1399  git stash pop
+ 1400  docker cp hibench/scripts/wordcount_runs_java.sh hibench:/usr/local/bin/wordcount_runs_java.sh
+ 1401  docker exec -it hibench bash -lc 'chmod +x /usr/local/bin/wordcount_runs_java.sh'
+ 1402  docker exec -it hibench bash -lc 'export JAVA_HOME=/opt/bitnami/java; export PATH="$JAVA_HOME/bin:/opt/bitnami/spark/bin:/opt/hadoop/bin:$PATH"; RUNS=3 NUM_LINES=500000 DATASIZE=tiny wordcount_runs_java.sh'
+ 1403  docker exec -it hibench bash -lc '
+ 1404    set -euo pipefail
+ 1405    export JAVA_HOME=/opt/bitnami/java
+ 1406    export PATH="$JAVA_HOME/bin:/opt/bitnami/spark/bin:/opt/hadoop/bin:$PATH"
+ 1407    # быстрый sanity: входной файл существует?
+ 1408    /opt/hadoop/bin/hdfs dfs -fs hdfs://namenode:8020 -test -f /HiBench/Wordcount/Input/part-00000
+ 1409    JAR=$(ls -1 /opt/bitnami/spark/examples/jars/spark-examples_2.12-3.*.jar | head -n1)
+ 1410    REPORT=/opt/hibench/report/hibench.report
+ 1411    RUNS_FILE=/tmp/wc_runs.txt
+ 1412    SCALE=tiny
+ 1413    echo -e "Benchmark\tEngine\tScale\tDuration(s)" > "$REPORT"
+ 1414    : > "$RUNS_FILE"
+ 1415    for i in $(seq 1 9); do
+ 1416      echo "[*] Run $i/9 ..."
+ 1417      start_ns=$(date +%s%N)
+ 1418      set +e
+ 1419      /opt/bitnami/spark/bin/spark-submit \
+ 1420        --master spark://spark-master:7077 \
+ 1421        --class org.apache.spark.examples.JavaWordCount \
+ 1422        "$JAR" hdfs://namenode:8020/HiBench/Wordcount/Input \
+ 1423        >/tmp/wc_java_$i.log 2>&1
+ 1424      rc=$?
+ 1425      set -e
+ 1426      end_ns=$(date +%s%N)
+ 1427      dur_ms=$(( (end_ns - start_ns) / 1000000 ))
+ 1428      dur_sec=$(python3 - <<PY
+ 1429  d=$dur_ms/1000.0
+ 1430  print(f"{d:.3f}")
+ 1431  PY
+ 1432  )
+ 1433      if [ $rc -ne 0 ]; then
+ 1434        echo "[ERR] failed run $i, rc=$rc"; tail -n 60 /tmp/wc_java_$i.log; exit $rc
+ 1435      fi
+ 1436      echo "WordCount,Spark,${SCALE},${dur_sec}" >> "$RUNS_FILE"
+ 1437      printf "WordCount\tSpark\t%s\t%s\n" "$SCALE" "$dur_sec" >> "$REPORT"
+ 1438    done
+ 1439    echo "[*] tail wc_runs:"
+ 1440    tail -n 5 "$RUNS_FILE" || true
+ 1441  '
+ 1442  docker exec -it hibench bash -lc 'python3 /usr/local/bin/parse_report_to_csv.py'
+ 1443  docker cp hibench:/tmp/wordcount_runs.csv ./out/wordcount_runs.csv
+ 1444  tail -n +1 ./out/wordcount_runs.csv
+ 1445  tail -n +1 /еьз/wordcount_runs.csv
+ 1446  tail -n +1 /tmp/wordcount_runs.csv
+ 1447  tail -n +1 hibench:/tmp/wordcount_runs.csv
+ 1448  docker cp hibench/scripts/wordcount_runs_java.sh hibench:/usr/local/bin/wordcount_runs_java.sh
+ 1449  docker exec -it hibench bash -lc 'chmod +x /usr/local/bin/wordcount_runs_java.sh'
+ 1450  docker exec -it hibench bash -lc 'export JAVA_HOME=/opt/bitnami/java; export PATH="$JAVA_HOME/bin:/opt/bitnami/spark/bin:/opt/hadoop/bin:$PATH"; SKIP_PREPARE=1 RUNS=9 DATASIZE=tiny wordcount_runs_java.sh'
+ 1451  docker exec -it hibench bash -lc 'python3 /usr/local/bin/parse_report_to_csv.py'
+ 1452  docker cp hibench:/tmp/wordcount_runs.csv ./out/wordcount_runs.csv
+ 1453  mkdir -p ./out
+ 1454  docker cp hibench:/tmp/wordcount_runs.csv ./out/wordcount_runs.csv
+ 1455  tail -n +1 ./out/wordcount_runs.csv
+ 1456  SKIP_PREPARE=1 RUNS=9 SCALE=tiny ./bin/run_wordcount_pipeline.sh
+ 1457  docker exec -it hibench bash -lc 'export JAVA_HOME=/opt/bitnami/java; export PATH="$JAVA_HOME/bin:/opt/bitnami/spark/bin:/opt/hadoop/bin:$PATH"; SKIP_PREPARE=1 RUNS=9 DATASIZE=tiny wordcount_runs_java.sh'
+ 1458  SKIP_PREPARE=1 RUNS=9 SCALE=tiny ./bin/run_wordcount_pipeline.sh
+ 1459  docker exec -it hibench bash -lc '
+ 1460    /opt/hadoop/bin/yarn application -list -appStates RUNNING
+ 1461  '
+ 1462  docker exec -it hibench bash -lc '
+ 1463    watch -n 2 "/opt/hadoop/bin/yarn application -list -appStates RUNNING"
+ 1464  '
+ 1465  docker exec -it hibench bash -lc '
+ 1466    /opt/hadoop/bin/yarn application -list -appStates RUNNING
+ 1467  '
+ 1468  docker exec -it hibench bash -lc '
+ 1469    /opt/hadoop/bin/yarn application -list -appStates RUNNING
+ 1470  '
+ 1471  docker exec -it hibench bash -lc '
+ 1472    /opt/hadoop/bin/yarn application -list -appStates RUNNING
+ 1473  '
+ 1474  ./bin/run_wordcount_pipeline.sh   --runs 9 --scale tiny --outdir ./out   --executors 4 --executor-cores 2 --executor-memory-gb 8   --driver-cores 2 --driver-memory-gb 4   --parallelism 256 --shuffle-partitions 256   --rdd-compress true --io-compression-codec lz4   --input-gb 1
+ 1475  ./bin/run_wordcount_pipeline.sh
+ 1476  ./bin/run_wordcount_pipeline.sh   --runs 9 --scale tiny --outdir ./out   --executors 4 --executor-cores 2 --executor-memory-gb 8   --driver-cores 2 --driver-memory-gb 4   --parallelism 256 --shuffle-partitions 256   --rdd-compress true --io-compression-codec lz4   --input-gb 1
+ 1477  ./bin/run_wordcount_pipeline.sh   --runs 3 --scale tiny --outdir ./out   --executors 2 --executor-cores 1 --executor-memory-gb 2   --driver-cores 1 --driver-memory-gb 1   --parallelism 8 --shuffle-partitions 8   --rdd-compress true --io-compression-codec lz4   --input-gb 1
+ 1478  docker compose up -d mlflow
+ 1479  docker compose build mlflow
+ 1480  docker compose up -d mlflow
+ 1481  curl -sf http://localhost:5000 >/dev/null && echo "MLflow OK"
+ 1482  git commit
+ 1483  docker cp ./hibench/scripts/parse_report_to_csv.py hibench:/usr/local/bin/parse_report_to_csv.py
+ 1484  python -m pip install -U numpy pandas scikit-learn matplotlib mlflow
+ 1485  python3 -m pip install -U numpy pandas scikit-learn matplotlib mlflow
+ 1486  python3 -m venv .venv
+ 1487  source .venv/bin/activate
+ 1488  python -m pip install -U numpy pandas scikit-learn matplotlib mlflow
+ 1489  ./bin/run_wordcount_pipeline.sh   --runs 1 --scale large --outdir ./out   --executors 2 --executor-cores 1 --executor-memory-gb 3   --driver-cores 1 --driver-memory-gb 2   --input-gb 8 --skip-prepare 0
+ 1490  docker cp ./hibench/wordcount_runs_java.sh hibench:/usr/local/bin/wordcount_runs_java.sh
+ 1491  docker cp ./hibench/scripts/wordcount_runs_java.sh hibench:/usr/local/bin/wordcount_runs_java.sh
+ 1492  docker exec -it hibench bash -lc 'chmod +x /usr/local/bin/wordcount_runs_java.sh'
+ 1493  docker cp ./hibench/scripts/parse_report_to_csv.py hibench:/usr/local/bin/parse_report_to_csv.py
+ 1494  ./bin/run_wordcount_pipeline.sh   --runs 1 --scale large --outdir ./out   --executors 2 --executor-cores 1 --executor-memory-gb 3   --driver-cores 1 --driver-memory-gb 2   --input-gb 8 --skip-prepare 0
+ 1495  zip -r hadoop-conf
+ 1496  zip hadoop-conf
+ 1497  docker compose up -d resourcemanager nodemanager-1 nodemanager-2
+ 1498  docker logs resourcemanager --tail=200
+ 1499  docker compose up -d resourcemanager
+ 1500  docker compose up -d nodemanager-1 nodemanager-2
+ 1501  docker logs resourcemanager --tail=200
+ 1502  docker compose up -d nodemanager-1 nodemanager-2
+ 1503  docker exec -it resourcemanager bash -lc 'yarn node -list -all'
+ 1504  docker compose up -d --force-recreate resourcemanager
+ 1505  docker inspect -f '{{json .State.Health}}' resourcemanager | jq .
+ 1506  docker exec -it resourcemanager bash -lc "exec 3<>/dev/tcp/127.0.0.1/8088 && echo OK"
+ 1507  docker compose up -d --force-recreate resourcemanager
+ 1508  docker logs -f resourcemanager | egrep -i 'Transitioned to active state|Web app cluster started|jetty.*Started'
+ 1509  docker compose up -d --no-deps nodemanager-1 nodemanager-2
+ 1510  docker exec -it resourcemanager bash -lc 'yarn node -list -all'
+ 1511  # должно стать: Total Nodes: 2
+ 1512  docker exec -it hibench bash -lc 'hdfs dfs -rm -r -f /HiBench/Wordcount/Input || true'
+ 1513  docker exec -it hibench bash -lc '/opt/hadoop/bin/hdfs dfs -fs hdfs://namenode:8020 -rm -r -f /HiBench/Wordcount/Input || true'
+ 1514  docker exec -it hibench bash -lc '
+ 1515    TOTAL=$((8*1024*1024*1024))   # 8 GiB
+ 1516    /opt/hadoop/bin/hadoop jar /opt/hadoop/share/hadoop/mapreduce/hadoop-mapreduce-examples-3.3.6.jar randomtextwriter \
+ 1517      -D mapreduce.job.maps=64 \
+ 1518      -D mapreduce.randomtextwriter.totalbytes=${TOTAL} \
+ 1519      hdfs://namenode:8020/HiBench/Wordcount/Input
+ 1520  '
+ 1521  docker exec -it hibench bash -lc '/opt/hadoop/bin/hdfs dfs -fs hdfs://namenode:8020 -du -h /HiBench/Wordcount/Input'
+ 1522  docker exec -it hibench bash -lc '
+ 1523    /opt/hadoop/bin/hdfs dfs -fs hdfs://namenode:8020 -rm -r -f /HiBench/Wordcount/Input;
+ 1524    TOTAL=$((8*1024*1024*1024));
+ 1525    /opt/hadoop/bin/hadoop jar /opt/hadoop/share/hadoop/mapreduce/hadoop-mapreduce-examples-3.3.6.jar randomtextwriter \
+ 1526      -D mapreduce.framework.name=yarn \
+ 1527      -D mapreduce.job.maps=64 \
+ 1528      -D mapreduce.job.reduces=0 \
+ 1529      -D yarn.app.mapreduce.am.resource.mb=512 \
+ 1530      -D mapreduce.map.memory.mb=1024 \
+ 1531      -D mapreduce.map.java.opts=-Xmx768m \
+ 1532      hdfs://namenode:8020/HiBench/Wordcount/Input
+ 1533  '
+ 1534  docker exec -it hibench bash -lc '
+ 1535    /opt/hadoop/bin/hdfs dfs -fs hdfs://namenode:8020 -rm -r -f /HiBench/Wordcount/Input;
+ 1536    TOTAL=$((8*1024*1024*1024));
+ 1537    /opt/hadoop/bin/hadoop jar /opt/hadoop/share/hadoop/mapreduce/hadoop-mapreduce-examples-3.3.6.jar randomtextwriter \
+ 1538      -D mapreduce.framework.name=yarn \
+ 1539      -D yarn.resourcemanager.address=resourcemanager:8032 \
+ 1540      -D yarn.resourcemanager.scheduler.address=resourcemanager:8030 \
+ 1541      -D yarn.resourcemanager.resource-tracker.address=resourcemanager:8031 \
+ 1542      -D yarn.resourcemanager.admin.address=resourcemanager:8033 \
+ 1543      -D mapreduce.job.maps=64 \
+ 1544      -D mapreduce.job.reduces=0 \
+ 1545      -D yarn.app.mapreduce.am.resource.mb=512 \
+ 1546      -D mapreduce.map.memory.mb=1024 \
+ 1547      -D mapreduce.map.java.opts=-Xmx768m \
+ 1548      hdfs://namenode:8020/HiBench/Wordcount/Input
+ 1549  '
+ 1550  docker exec -it hibench bash -lc '/opt/hadoop/bin/hdfs dfs -fs hdfs://namenode:8020 -du -h /HiBench/Wordcount/Input'
+ 1551  docker exec -it hibench bash -lc '
+ 1552    set -e
+ 1553    HDFS=/opt/hadoop/bin/hdfs
+ 1554    HADOOP=/opt/hadoop/bin/hadoop
+ 1555    # 0) Готовим системные директории в HDFS
+ 1556    $HDFS dfs -fs hdfs://namenode:8020 -mkdir -p /tmp /user/root
+ 1557    $HDFS dfs -fs hdfs://namenode:8020 -chmod 1777 /tmp
+ 1558    # 1) Чистим вход
+ 1559    $HDFS dfs -fs hdfs://namenode:8020 -rm -r -f /HiBench/Wordcount/Input
+ 1560    # 2) Генерация текста RandomTextWriter на YARN c HDFS-стейджингом
+ 1561    TOTAL=$((8*1024*1024*1024))
+ 1562    $HADOOP jar /opt/hadoop/share/hadoop/mapreduce/hadoop-mapreduce-examples-3.3.6.jar randomtextwriter \
+ 1563      -D mapreduce.framework.name=yarn \
+ 1564      -D yarn.resourcemanager.address=resourcemanager:8032 \
+ 1565      -D yarn.resourcemanager.scheduler.address=resourcemanager:8030 \
+ 1566      -D yarn.resourcemanager.resource-tracker.address=resourcemanager:8031 \
+ 1567      -D yarn.resourcemanager.admin.address=resourcemanager:8033 \
+ 1568      -D mapreduce.jobtracker.staging.root.dir=hdfs://namenode:8020/tmp/hadoop-yarn/staging \
+ 1569      -D mapreduce.job.maps=64 \
+ 1570      -D mapreduce.job.reduces=0 \
+ 1571      -D yarn.app.mapreduce.am.resource.mb=512 \
+ 1572      -D mapreduce.map.memory.mb=1024 \
+ 1573      -D mapreduce.map.java.opts=-Xmx768m \
+ 1574      hdfs://namenode:8020/HiBench/Wordcount/Input
+ 1575  '
+ 1576  docker exec -it hibench bash -lc '
+ 1577    set -euo pipefail
+ 1578    HDFS=/opt/hadoop/bin/hdfs
+ 1579    HADOOP=/opt/hadoop/bin/hadoop
+ 1580    # HDFS системные каталоги + права
+ 1581    $HDFS dfs -fs hdfs://namenode:8020 -mkdir -p /tmp /tmp/hadoop-yarn/staging /user/root
+ 1582    $HDFS dfs -fs hdfs://namenode:8020 -chmod 1777 /tmp
+ 1583    $HDFS dfs -fs hdfs://namenode:8020 -chmod 1777 /tmp/hadoop-yarn /tmp/hadoop-yarn/staging || true
+ 1584    # Чистим вход
+ 1585    $HDFS dfs -fs hdfs://namenode:8020 -rm -r -f /HiBench/Wordcount/Input
+ 1586    # Генерация 8 GiB
+ 1587    TOTAL=$((8*1024*1024*1024))
+ 1588    $HADOOP jar /opt/hadoop/share/hadoop/mapreduce/hadoop-mapreduce-examples-3.3.6.jar randomtextwriter \
+ 1589      -D fs.defaultFS=hdfs://namenode:8020 \
+ 1590      -D mapreduce.framework.name=yarn \
+ 1591      -D yarn.resourcemanager.address=resourcemanager:8032 \
+ 1592      -D yarn.resourcemanager.scheduler.address=resourcemanager:8030 \
+ 1593      -D yarn.resourcemanager.resource-tracker.address=resourcemanager:8031 \
+ 1594      -D yarn.resourcemanager.admin.address=resourcemanager:8033 \
+ 1595      -D mapreduce.jobtracker.staging.root.dir=/tmp/hadoop-yarn/staging \
+ 1596      -D mapreduce.job.maps=64 \
+ 1597      -D mapreduce.job.reduces=0 \
+ 1598      -D mapreduce.randomtextwriter.totalbytes=${TOTAL} \
+ 1599      -D yarn.app.mapreduce.am.resource.mb=512 \
+ 1600      -D mapreduce.map.memory.mb=1024 \
+ 1601      -D mapreduce.map.java.opts=-Xmx768m \
+ 1602      hdfs://namenode:8020/HiBench/Wordcount/Input
+ 1603  '
+ 1604  docker compose up -d --force-recreate resourcemanager nodemanager-1 nodemanager-2 hibench
+ 1605  docker compose up -d --force-recreate resourcemanager
+ 1606  docker logs -f resourcemanager | egrep -i 'Web app cluster started|Transitioned to active state' -m1
+ 1607  docker compose up -d --no-deps nodemanager-1 nodemanager-2
+ 1608  docker exec -it resourcemanager bash -lc 'yarn node -list -all'
+ 1609  docker compose up -d --no-deps hibench
+ 1610  docker exec -it hibench bash -lc '
+ 1611    set -euo pipefail
+ 1612    HDFS=/opt/hadoop/bin/hdfs
+ 1613    $HDFS dfs -fs hdfs://namenode:8020 -mkdir -p /tmp /tmp/hadoop-yarn/staging /user/root
+ 1614    $HDFS dfs -fs hdfs://namenode:8020 -chmod 1777 /tmp
+ 1615    $HDFS dfs -fs hdfs://namenode:8020 -chmod 1777 /tmp/hadoop-yarn /tmp/hadoop-yarn/staging || true
+ 1616  '
+ 1617  docker exec -it hibench bash -lc '
+ 1618    set -euo pipefail
+ 1619    HDFS=/opt/hadoop/bin/hdfs
+ 1620    HADOOP=/opt/hadoop/bin/hadoop
+ 1621    $HDFS dfs -fs hdfs://namenode:8020 -rm -r -f /HiBench/Wordcount/Input
+ 1622    TOTAL=$((8*1024*1024*1024))
+ 1623    BYTES_PER_MAP=$((128*1024*1024))   # 128 MiB -> 64 map на 8 GiB
+ 1624    $HADOOP jar /opt/hadoop/share/hadoop/mapreduce/hadoop-mapreduce-examples-3.3.6.jar randomtextwriter \
+ 1625      -D fs.defaultFS=hdfs://namenode:8020 \
+ 1626      -D mapreduce.framework.name=yarn \
+ 1627      -D mapreduce.randomtextwriter.totalbytes=${TOTAL} \
+ 1628      -D mapreduce.randomtextwriter.bytespermap=${BYTES_PER_MAP} \
+ 1629      -D mapreduce.job.reduces=0 \
+ 1630      -D yarn.app.mapreduce.am.resource.mb=512 \
+ 1631      -D mapreduce.map.memory.mb=1024 \
+ 1632      -D mapreduce.map.java.opts=-Xmx768m \
+ 1633      hdfs://namenode:8020/HiBench/Wordcount/Input
+ 1634  '
+ 1635  docker compose up -d --no-deps --force-recreate hibench
+ 1636  docker exec -it hibench bash -lc '/opt/hadoop/bin/hadoop conf -confKey yarn.resourcemanager.address'
+ 1637  # должно вывести: resourcemanager:8032
+ 1638  docker compose up -d --no-deps --force-recreate hibench
+ 1639  docker exec -it hibench bash -lc '/opt/hadoop/bin/hadoop conf -confKey yarn.resourcemanager.address'
+ 1640  # должно быть: resourcemanager:8032
+ 1641  sed -i.bak -E '/^\s*export\s+JAVA_HOME=/d' ./hadoop-conf/hadoop-env.sh
+ 1642  docker exec -it hibench bash -lc '/opt/hadoop/bin/hadoop version'
+ 1643  docker compose up -d --force-recreate resourcemanager
+ 1644  docker logs -f resourcemanager | egrep -m1 'Web app cluster started|Transitioned to active state'
+ 1645  docker compose up -d --no-deps --force-recreate nodemanager-1 nodemanager-2
+ 1646  docker exec -it resourcemanager bash -lc 'yarn node -list -all'
+ 1647  docker compose up -d --no-deps --force-recreate hibench
+ 1648  docker exec -it resourcemanager bash -lc 'yarn node -list -all'
+ 1649  docker exec -it hibench bash -lc '/opt/hadoop/bin/hadoop version'
+ 1650  docker compose up -d --no-deps --force-recreate hibench
+ 1651  docker exec -it hibench bash -lc '/opt/hadoop/bin/hadoop version'
+ 1652  docker compose up -d --no-deps --force-recreate hibench
+ 1653  docker exec -it hibench bash -lc '/opt/hadoop/bin/hadoop version'
+ 1654  docker exec -it hibench bash -lc '/opt/hadoop/bin/hadoop conf -confKey yarn.resourcemanager.address'
+ 1655  docker exec -it hibench bash -lc '
+ 1656    set -eux
+ 1657    HDFS=/opt/hadoop/bin/hdfs
+ 1658    $HDFS dfs -fs hdfs://namenode:8020 -mkdir -p /tmp /tmp/hadoop-yarn/staging /user/root
+ 1659    $HDFS dfs -fs hdfs://namenode:8020 -chmod 1777 /tmp
+ 1660    $HDFS dfs -fs hdfs://namenode:8020 -chmod 1777 /tmp/hadoop-yarn /tmp/hadoop-yarn/staging || true
+ 1661  '
+ 1662  docker compose up -d --force-recreate resourcemanager
+ 1663  docker logs -f resourcemanager | egrep -m1 'Web app cluster started|Transitioned to active state'
+ 1664  docker compose up -d --no-deps --force-recreate nodemanager-1 nodemanager-2
+ 1665  docker exec -it resourcemanager bash -lc 'yarn node -list -all'
+ 1666  docker compose up -d --no-deps --force-recreate hibench
+ 1667  docker exec -it hibench bash -lc '/opt/hadoop/bin/hadoop version'
+ 1668  docker exec -it hibench bash -lc '/opt/hadoop/bin/hadoop conf -confKey yarn.resourcemanager.address'
+ 1669  docker exec -it hibench bash -lc '
+ 1670    set -eux
+ 1671    HDFS=/opt/hadoop/bin/hdfs
+ 1672    $HDFS dfs -fs hdfs://namenode:8020 -mkdir -p /tmp /tmp/hadoop-yarn/staging /user/root
+ 1673    $HDFS dfs -fs hdfs://namenode:8020 -chmod 1777 /tmp
+ 1674    $HDFS dfs -fs hdfs://namenode:8020 -chmod 1777 /tmp/hadoop-yarn /tmp/hadoop-yarn/staging || true
+ 1675  '
+ 1676  docker exec -it hibench bash -lc '
+ 1677    set -eux
+ 1678    HDFS=/opt/hadoop/bin/hdfs
+ 1679    HADOOP=/opt/hadoop/bin/hadoop
+ 1680    $HDFS dfs -fs hdfs://namenode:8020 -rm -r -f /HiBench/Wordcount/Input
+ 1681    TOTAL=$((8*1024*1024*1024))
+ 1682    BYTES_PER_MAP=$((128*1024*1024))   # 128 MiB -> ~64 map на 8 GiB
+ 1683    $HADOOP jar /opt/hadoop/share/hadoop/mapreduce/hadoop-mapreduce-examples-3.3.6.jar randomtextwriter \
+ 1684      -D mapreduce.framework.name=yarn \
+ 1685      -D mapreduce.randomtextwriter.totalbytes=${TOTAL} \
+ 1686      -D mapreduce.randomtextwriter.bytespermap=${BYTES_PER_MAP} \
+ 1687      -D mapreduce.job.reduces=0 \
+ 1688      hdfs://namenode:8020/HiBench/Wordcount/Input
+ 1689    /opt/hadoop/bin/hdfs dfs -fs hdfs://namenode:8020 -du -h /HiBench/Wordcount/Input
+ 1690  '
+ 1691  docker compose up -d --force-recreate resourcemanager
+ 1692  docker compose up -d --no-deps --force-recreate nodemanager-1 nodemanager-2
+ 1693  docker logs -f nodemanager-1 | egrep -i 'Registered with RM|Node Manager up'
+ 1694  # создать каталоги и открыть права (зайдём как root внутри контейнера)
+ 1695  docker exec -u 0 -it nodemanager-1 bash -lc '
+ 1696    set -eux
+ 1697    mkdir -p /hadoop/yarn/local /var/log/hadoop-yarn/containers
+ 1698    chmod -R 1777 /hadoop/yarn/local /var/log/hadoop-yarn
+ 1699  '
+ 1700  docker restart nodemanager-1 nodemanager-2
+ 1701  docker exec -it resourcemanager bash -lc 'yarn node -list -all'
+ 1702  docker exec -u 0 -it nodemanager-2 bash -lc '
+ 1703    set -eux
+ 1704    mkdir -p /hadoop/yarn/local /var/log/hadoop-yarn/containers
+ 1705    chmod -R 1777 /hadoop/yarn/local /var/log/hadoop-yarn
+ 1706  '
+ 1707  docker restart nodemanager-1 nodemanager-2
+ 1708  docker exec -it resourcemanager bash -lc 'yarn node -list -all'
+ 1709  docker exec -it hibench bash -lc '/opt/hadoop/bin/yarn application -list -appStates RUNNING'
+ 1710  docker exec -it hibench bash -lc '
+ 1711    set -euo pipefail
+ 1712    HDFS=/opt/hadoop/bin/hdfs
+ 1713    $HDFS dfs -fs hdfs://namenode:8020 -mkdir -p /tmp /tmp/hadoop-yarn/staging /user/root
+ 1714    $HDFS dfs -fs hdfs://namenode:8020 -chmod 1777 /tmp
+ 1715    $HDFS dfs -fs hdfs://namenode:8020 -chmod 1777 /tmp/hadoop-yarn /tmp/hadoop-yarn/staging || true
+ 1716  '
+ 1717  docker exec -it hibench bash -lc '
+ 1718    set -euo pipefail
+ 1719    HDFS=/opt/hadoop/bin/hdfs
+ 1720    HADOOP=/opt/hadoop/bin/hadoop
+ 1721    $HDFS dfs -fs hdfs://namenode:8020 -rm -r -f /HiBench/Wordcount/Input || true
+ 1722    TOTAL=$((8*1024*1024*1024))
+ 1723    BYTES_PER_MAP=$((128*1024*1024))
+ 1724    $HADOOP jar /opt/hadoop/share/hadoop/mapreduce/hadoop-mapreduce-examples-3.3.6.jar randomtextwriter \
+ 1725      -D fs.defaultFS=hdfs://namenode:8020 \
+ 1726      -D mapreduce.framework.name=yarn \
+ 1727      -D mapreduce.randomtextwriter.totalbytes=${TOTAL} \
+ 1728      -D mapreduce.randomtextwriter.bytespermap=${BYTES_PER_MAP} \
+ 1729      -D mapreduce.job.reduces=0 \
+ 1730      -D yarn.app.mapreduce.am.resource.mb=512 \
+ 1731      -D mapreduce.map.memory.mb=1024 \
+ 1732      -D mapreduce.map.java.opts=-Xmx768m \
+ 1733      hdfs://namenode:8020/HiBench/Wordcount/Input
+ 1734  '
+ 1735  docker exec -it hibench bash -lc '/opt/hadoop/bin/yarn application -list -appStates FINISHED | tail -n +2 | head -n 5'
+ 1736  docker exec -it hibench bash -lc '
+ 1737    APP=$( /opt/hadoop/bin/yarn application -list -appStates FINISHED | awk "NR==3{print \$1}" );
+ 1738    [ -n "$APP" ] && /opt/hadoop/bin/yarn application -status "$APP" || true
+ 1739  '
+ 1740  docker exec -it hibench bash -lc '/opt/hadoop/bin/hdfs dfs -fs hdfs://namenode:8020 -du -h /HiBench/Wordcount/Input'
+ 1741  docker exec -it hibench bash -lc '/opt/hadoop/bin/hdfs dfs -fs hdfs://namenode:8020 -count -q -h /HiBench/Wordcount/Input'
+ 1742  docker exec -it hibench bash -lc '/opt/hadoop/bin/hdfs dfs -fs hdfs://namenode:8020 -ls /HiBench/Wordcount/Input | grep -c "part-m-"'
+ 1743  docker exec -it resourcemanager bash -lc 'yarn node -list -all'
+ 1744  docker exec -it hibench bash -lc '
+ 1745    IN=/HiBench/Wordcount/Input
+ 1746    OUT=/HiBench/Wordcount/Output-$(date +%s)
+ 1747    /opt/hadoop/bin/hdfs dfs -fs hdfs://namenode:8020 -rm -r -f "$OUT" || true
+ 1748    /opt/hadoop/bin/hadoop jar /opt/hadoop/share/hadoop/mapreduce/hadoop-mapreduce-examples-3.3.6.jar wordcount \
+ 1749      -D mapreduce.framework.name=yarn \
+ 1750      -D yarn.app.mapreduce.am.resource.mb=512 \
+ 1751      -D mapreduce.map.memory.mb=1024 \
+ 1752      -D mapreduce.reduce.memory.mb=1024 \
+ 1753      -D mapreduce.job.reduces=2 \
+ 1754      hdfs://namenode:8020$IN hdfs://namenode:8020$OUT
+ 1755    /opt/hadoop/bin/hdfs dfs -fs hdfs://namenode:8020 -ls "$OUT"
+ 1756    /opt/hadoop/bin/hdfs dfs -fs hdfs://namenode:8020 -tail "$OUT/part-r-00000" | head -n 20 || true
+ 1757  '
+ 1758  docker exec -it hibench bash -lc '
+ 1759    OUT=$( /opt/hadoop/bin/hdfs dfs -fs hdfs://namenode:8020 -ls /HiBench/Wordcount | awk "/Output-/{print \$8}" | tail -n1 )
+ 1760    echo "OUT=$OUT"
+ 1761    # корректный вывод текста:
+ 1762    /opt/hadoop/bin/hdfs dfs -fs hdfs://namenode:8020 -text "$OUT/part-r-00000" | head -n 20
+ 1763  '
+ 1764  docker exec -it hibench bash -lc '
+ 1765    OUT=$( /opt/hadoop/bin/hdfs dfs -fs hdfs://namenode:8020 -ls /HiBench/Wordcount | awk "/Output-/{print \$8}" | tail -n1 )
+ 1766    /opt/hadoop/bin/hdfs dfs -fs hdfs://namenode:8020 -cat "$OUT/part-r-"* \
+ 1767      | LC_ALL=C sort -k2,2nr | head -n 20
+ 1768  '
+ 1769  docker exec -it hibench bash -lc '
+ 1770    OUT=$( /opt/hadoop/bin/hdfs dfs -fs hdfs://namenode:8020 -ls /HiBench/Wordcount | awk "/Output-/{print \$8}" | tail -n1 )
+ 1771    /opt/hadoop/bin/hdfs dfs -fs hdfs://namenode:8020 -cat "$OUT/part-r-"* | wc -l
+ 1772  '
+ 1773  docker exec -it hibench bash -lc '
+ 1774    /opt/hadoop/bin/yarn application -list -appStates FINISHED | head
+ 1775  '
+ 1776  git commit
+ 1777  htop
+ 1778  sudo apt  install htop
+ 1779  git push
+ 1780  history > log.txt
