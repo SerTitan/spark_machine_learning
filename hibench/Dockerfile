@@ -1,4 +1,3 @@
-# ---- Stage 1: Build HiBench with JDK8 ----
 FROM openjdk:8-jdk-bullseye AS build
 
 RUN apt-get update && \
@@ -11,11 +10,10 @@ WORKDIR /opt
 RUN git clone https://github.com/Intel-bigdata/HiBench.git hibench
 WORKDIR /opt/hibench
 
-# Сборка под Hadoop 3.2 / Spark 3.0 (совместимые артефакты)
+# Сборка под Hadoop 3.2 / Spark 3.0
 RUN mvn -Psparkbench -Phadoopbench -Dspark=3.0 -Dscala=2.12 -Dhadoop=3.2 \
         clean package -DskipTests
 
-# ---- Stage 2: Runtime on Spark ----
 FROM bitnami/spark:3.3
 
 USER root
@@ -26,7 +24,7 @@ RUN apt-get update && apt-get install -y \
     git maven wget curl tar dos2unix ca-certificates python3 python3-lib2to3 bc \
  && rm -rf /var/lib/apt/lists/*
 
-# Симлинк на Spark (bitnami кладёт в /opt/bitnami/spark)
+# Симлинк на Spark
 ENV SPARK_HOME=/opt/spark \
     HIBENCH_HOME=/opt/hibench
 RUN test -d /opt/spark || ln -s /opt/bitnami/spark /opt/spark
@@ -44,7 +42,7 @@ ENV HADOOP_HOME=/opt/hadoop
 ENV HADOOP_CONF_DIR=/opt/hadoop/etc/hadoop
 ENV PATH=$HADOOP_HOME/bin:$HADOOP_HOME/sbin:$PATH
 
-# --- JDK 8 (оставляем на всякий случай для пересборки) ---
+# --- JDK 8 ---
 ARG JDK8_URL=https://github.com/adoptium/temurin8-binaries/releases/download/jdk8u382-b05/OpenJDK8U-jdk_x64_linux_hotspot_8u382b05.tar.gz
 RUN set -eux; \
     wget -qO /tmp/jdk8.tgz "$JDK8_URL"; \
@@ -53,7 +51,6 @@ RUN set -eux; \
     rm -f /tmp/jdk8.tgz; \
     ln -s /opt/java/*jdk8* /opt/java8
 
-# --- Копируем готовый HiBench из build-stage ---
 COPY --from=build /opt/hibench /opt/hibench
 
 WORKDIR /opt/hibench
@@ -63,7 +60,7 @@ RUN 2to3 -w bin/functions/*.py || true && \
     sed -i '1s|/usr/bin/env python2|/usr/bin/env python3|' bin/functions/*.py || true && \
     chmod +x bin/functions/*.py
 
-# --- Копируем фиксированные версии файлов (если у тебя есть) ---
+# --- Копируем фиксированные версии файлов ---
 COPY fix/execute_with_log.py /opt/hibench/bin/functions/execute_with_log.py
 COPY fix/terminalsize.py     /opt/hibench/bin/functions/terminalsize.py
 COPY fix/load_config.py      /opt/hibench/bin/functions/load_config.py

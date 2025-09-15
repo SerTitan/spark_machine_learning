@@ -1,0 +1,47 @@
+{
+  "metrics": {
+    "MAE": 5.672758498429782,
+    "RMSE": 7.535945883049539,
+    "R2": -0.022481219840636335,
+    "MAPE": 5.959108430099004,
+    "n_train": 127,
+    "n_val": 32,
+    "n_test": 40,
+    "mode": "rf",
+    "baseline_MAE": 4.991337925000001,
+    "baseline_RMSE": 6.504236072419083,
+    "baseline_R2": 0.23832028579242703
+  },
+  "qlearning": {
+    "huge": {
+      "best_pred_s": 88.30918907580036,
+      "best_conf": {
+        "executor_instances": 2,
+        "executor_memory_mb": 3072.0,
+        "driver_memory_mb": 2048.0,
+        "memory_fraction": 0.6,
+        "shuffle_compress_b": 0,
+        "spill_compress_b": 0,
+        "broadcast_block_mb": 4.0,
+        "max_in_flight_mb": 64.0,
+        "shuffle_file_buffer_mb": 0.125,
+        "io_codec": "snappy"
+      }
+    },
+    "large": {
+      "best_pred_s": 91.44134946452591,
+      "best_conf": {
+        "executor_instances": 3,
+        "executor_memory_mb": 3072.0,
+        "driver_memory_mb": 2048.0,
+        "memory_fraction": 0.7,
+        "shuffle_compress_b": 0,
+        "spill_compress_b": 1,
+        "broadcast_block_mb": 8.0,
+        "max_in_flight_mb": 64.0,
+        "shuffle_file_buffer_mb": 0.03125,
+        "io_codec": "snappy"
+      }
+    }
+  }
+}

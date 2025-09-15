@@ -13,7 +13,6 @@ volumes:
   nm2-logs:
 
 services:
-  # ==== HDFS (официальные Apache Hadoop образы) ====
   namenode:
     image: apache/hadoop:3.3.6
     container_name: namenode
@@ -67,7 +66,6 @@ services:
       start_period: 10s
     restart: unless-stopped
 
-  # ==== YARN ====
   resourcemanager:
     image: apache/hadoop:3.3.6
     container_name: resourcemanager
@@ -142,7 +140,6 @@ services:
       - "8043:8042"
     restart: unless-stopped
 
-  # ==== Spark Standalone ====
   spark-master:
     image: bitnami/spark:3.3
     container_name: spark-master
@@ -217,7 +214,6 @@ services:
       start_period: 10s
     restart: unless-stopped
 
-  # ==== HiBench инструментальный контейнер ====
   hibench:
     build:
       context: ./hibench
@@ -244,7 +240,6 @@ services:
       start_period: 15s
     restart: unless-stopped
 
-  # ==== MLflow (оставь как у тебя; ниже рабочий шаблон) ====
   mlflow:
     build:
       context: ./mlflow
