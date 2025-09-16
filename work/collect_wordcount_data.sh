@@ -1,66 +1,91 @@
 #!/usr/bin/env bash
 set -euo pipefail
+#
+# collect_wordcount_data.sh
+# Запускается ВНУТРИ контейнера hibench (/opt/hibench/report/collect_wordcount_data.sh).
+# Собирает датасет медианных времен (по 9 прогонов) для случайных наборов параметров Spark.
+#
 
 cd /opt/hibench
 
-PROFILE="${PROFILE:-huge}"
-CSV="/opt/hibench/report/wc_train_all.csv"
-LOG="/opt/hibench/report/wordcount/spark/bench.log"
+PROFILE="${PROFILE:-large}"
+CSV="${CSV:-/opt/hibench/report/wc_train_all.csv}"
 CONF="/opt/hibench/conf/spark.conf"
-MAX_RUNS="${MAX_RUNS:-64}"              # предел выборки из общей сетки
-NUM_WORKERS="${NUM_WORKERS:-4}"
+REPORT="/opt/hibench/report/hibench.report"
+LOG_DIR="/opt/hibench/report/wordcount/spark"
+LOG_FILE="${LOG_DIR}/bench.log"
 
-# --- гарантируем корректные master/home в спарк-конфиге
+NUM_WORKERS="${NUM_WORKERS:-4}"
+WORKER_CORES="${WORKER_CORES:-2}"
+WORKER_MEM_GB="${WORKER_MEM_GB:-4}"
+
+TARGET_SAMPLES="${TARGET_SAMPLES:-166}"
+REPEATS="${REPEATS:-9}"
+
+# Гарантируем master/home
 grep -q '^hibench.spark.master' "$CONF" || echo 'hibench.spark.master     spark://spark-master:7077' >> "$CONF"
 grep -q '^hibench.spark.home'   "$CONF" || echo 'hibench.spark.home       /opt/spark'                >> "$CONF"
 
-# --- базовые инварианты (сопоставимость и безопасность по ресурсам)
-EXEC_CORES="2"
-DRIVER_CORES="1"
-
-# --- сетки параметров: компактнее для huge, шире для large
-if [[ "$PROFILE" == "huge" ]]; then
-  arr_EXEC_MEM=(2g 3g)                         # 2
-  arr_EXEC_INST=(2 3)                          # 2
-  arr_DRIVER_MEM=(2g)                          # 1
-  arr_MEM_FRACTION=(0.4 0.6)                   # 2
-  arr_SHUFFLE_COMP=(true false)                # 2
-  arr_SPILL_COMP=(true false)                  # 2  <-- NEW
-  arr_BCAST_BLOCK=(4m 8m)                      # 2
-  arr_MAX_IN_FLIGHT=(48m 96m)                  # 2
-  arr_FILE_BUF=(32k 128k)                      # 2
-  arr_IO_CODEC=(lz4 snappy)                    # 2  <-- NEW
-else
-  # large — чуть шире диапазоны
-  arr_EXEC_MEM=(2g 3g)                         # держим в безопасной зоне
-  arr_EXEC_INST=(2 3)                          # экзекьюторов не больше воркеров
-  arr_DRIVER_MEM=(2g)
-  arr_MEM_FRACTION=(0.4 0.6 0.7)               # +0.7
-  arr_SHUFFLE_COMP=(true false)
-  arr_SPILL_COMP=(true false)
-  arr_BCAST_BLOCK=(4m 8m)
-  arr_MAX_IN_FLIGHT=(48m 64m 96m)              # +64m
-  arr_FILE_BUF=(32k 64k 128k)                  # +64k
-  arr_IO_CODEC=(lz4 snappy)
+# Подготовка входа
+sed -i "s/^hibench.scale.profile.*/hibench.scale.profile        ${PROFILE}/" conf/hibench.conf
+if ! /opt/hadoop/bin/hdfs dfs -test -e /Wordcount/Input/_SUCCESS; then
+  echo ">>> [prepare] Wordcount input for PROFILE=${PROFILE} ..."
+  bin/workloads/micro/wordcount/prepare/prepare.sh
+  echo ">>> [prepare] done."
 fi
 
-# --- не позволяем executor.instances быть больше числа воркеров
-_filtered_EXEC_INST=()
-for ei in "${arr_EXEC_INST[@]}"; do
-  [[ "$ei" -le "$NUM_WORKERS" ]] && _filtered_EXEC_INST+=("$ei")
-done
-arr_EXEC_INST=("${_filtered_EXEC_INST[@]}")
-
-# --- заголовок CSV
+mkdir -p "$(dirname "$CSV")" "$LOG_DIR"
 if [[ ! -s "$CSV" ]]; then
-  echo "profile,executor_cores,executor_memory,executor_instances,driver_cores,driver_memory,memory_fraction,shuffle_compress,spill_compress,broadcast_block,maxSizeInFlight,shuffle_file_buffer,io_codec,duration_s,throughput_Bps,input_bytes,exit_code" > "$CSV"
+  echo "topology_workers,topology_worker_cores,topology_worker_mem_gb,profile,executor_cores,executor_memory,executor_instances,driver_cores,driver_memory,memory_fraction,memory_storageFraction,shuffle_compress,spill_compress,shuffle_file_buffer,broadcast_block,broadcast_compress,maxSizeInFlight,io_codec,rpc_message_maxSize,rdd_compress,median_duration_s,exit_code" > "$CSV"
 fi
 
+# -------------------- сетки параметров --------------------
+_seq_int() { awk -v s="$1" -v e="$2" -v st="${3:-1}" 'BEGIN{for(i=s;i<=e;i+=st)print i}'; }
+_seq_float() {
+  python3 - "$@" <<'PY'
+import sys
+s=float(sys.argv[1]); e=float(sys.argv[2]); st=float(sys.argv[3])
+x=s; out=[]
+while x<=e+1e-9:
+    out.append(f"{x:.1f}"); x+=st
+print("\n".join(out))
+PY
+}
+
+mapfile -t GRID_EXEC_CORES < <(_seq_int 1 "$((${WORKER_CORES}<8?${WORKER_CORES}:8))" 1)
+_emax="$((${WORKER_MEM_GB}<8?${WORKER_MEM_GB}:8))"; GRID_EXEC_MEM=(); for g in $(_seq_int 1 "${_emax}" 1); do GRID_EXEC_MEM+=("${g}g"); done
+_imax=$(( NUM_WORKERS<8?NUM_WORKERS:8 )); [[ $_imax -lt 1 ]] && _imax=1
+if [[ $_imax -ge 2 ]]; then mapfile -t GRID_EXEC_INST < <(_seq_int 2 "$_imax" 1); else GRID_EXEC_INST=(1); fi
+mapfile -t GRID_DRIVERS < <(_seq_int 1 4 1)
+GRID_DRIVER_MEM=(1g 2g 3g 4g)
+GRID_INFLIGHT=(48m 56m 64m 72m 80m 88m 96m)
+GRID_SHUFFLE_COMP=(true false)
+GRID_SPILL_COMP=(true false)
+GRID_FILE_BUF=(32k 48k 64k 80k 96k 112k 128k)
+GRID_BCAST_BLOCK=(4m 6m 8m 10m 12m 14m 16m 18m 20m 22m 24m)
+GRID_BCAST_COMP=(true false)
+mapfile -t GRID_MEM_FRAC < <(_seq_float 0.3 0.8 0.1)
+mapfile -t GRID_MEM_SFRAC < <(_seq_float 0.3 0.8 0.1)
+mapfile -t GRID_RPC_MAX < <(_seq_int 128 256 32)
+GRID_RDD_COMP=(true false)
+GRID_CODEC=(lz4 snappy)
+
+_pick() { local arr=("$@"); echo "${arr[RANDOM%${#arr[@]}]}"; }
+
+# -------------------- helpers --------------------
 write_conf() {
-  local ecores="$1" emem="$2" einst="$3" dcores="$4" dmem="$5" mfrac="$6" shcomp="$7" spcomp="$8" bblk="$9" infl="${10}" sbuf="${11}" codec="${12}"
+  local ecores="$1" emem="$2" einst="$3"
+  local dcores="$4" dmem="$5"
+  local infl="$6"
+  local shcomp="$7" spcomp="$8" sbuf="$9"
+  local bblk="${10}" bcomp="${11}"
+  local mfrac="${12}" msfrac="${13}"
+  local rpcmax="${14}"
+  local rddc="${15}"
+  local codec="${16}"
 
   cat > "$CONF" <<EOF
-# --- AUTOGENERATED by collect_wordcount_data.sh ---
+# --- AUTOGENERATED (collect_wordcount_data.sh) ---
 hibench.spark.master     spark://spark-master:7077
 hibench.spark.home       /opt/spark
 
@@ -71,12 +96,16 @@ spark.executor.instances ${einst}
 spark.driver.cores       ${dcores}
 spark.driver.memory      ${dmem}
 
-spark.memory.fraction            ${mfrac}
+spark.reducer.maxSizeInFlight    ${infl}
 spark.shuffle.compress           ${shcomp}
 spark.shuffle.spill.compress     ${spcomp}
-spark.broadcast.blockSize        ${bblk}
-spark.reducer.maxSizeInFlight    ${infl}
 spark.shuffle.file.buffer        ${sbuf}
+spark.broadcast.blockSize        ${bblk}
+spark.broadcast.compress         ${bcomp}
+spark.memory.fraction            ${mfrac}
+spark.memory.storageFraction     ${msfrac}
+spark.rpc.message.maxSize        ${rpcmax}
+spark.rdd.compress               ${rddc}
 spark.io.compression.codec       ${codec}
 
 spark.serializer         org.apache.spark.serializer.KryoSerializer
@@ -85,86 +114,51 @@ spark.eventLog.dir       /opt/spark/history
 EOF
 }
 
-prepare_input_once() {
-  sed -i "s/^hibench.scale.profile.*/hibench.scale.profile        ${PROFILE}/" conf/hibench.conf
-  if ! /opt/hadoop/bin/hdfs dfs -test -e /Wordcount/Input/_SUCCESS; then
-    echo ">>> prepare Wordcount (${PROFILE})..."
-    bin/workloads/micro/wordcount/prepare/prepare.sh
-  fi
-}
-
 run_once() {
-  echo ">>> run Wordcount..."
   bin/workloads/micro/wordcount/spark/run.sh
 }
 
-parse_metrics() {
-  local dur tp inb
-  dur=$(awk '/Job 0 finished/{for(i=1;i<=NF;i++) if ($i=="took"){print $(i+1); exit}}' "$LOG" || true)
-  [[ -z "$dur" ]] && dur=$(awk '/finished in [0-9]+\.[0-9]+ s/{for(i=1;i<=NF;i++) if ($i=="in"){print $(i+1); exit}}' "$LOG" || true)
-  dur="${dur:-0}"
+# -------------------- основной цикл --------------------
+echo "=== START collect: PROFILE=${PROFILE}; TARGET_SAMPLES=${TARGET_SAMPLES}; REPEATS=${REPEATS}; TOPOLOGY=${NUM_WORKERS}x${WORKER_CORES}c${WORKER_MEM_GB}g ==="
+samples_done=0
+while [[ "$samples_done" -lt "$TARGET_SAMPLES" ]]; do
+  ecores="$(_pick "${GRID_EXEC_CORES[@]}")"
+  emem="$(_pick "${GRID_EXEC_MEM[@]}")"
+  einst="$(_pick "${GRID_EXEC_INST[@]}")"
+  dcores="$(_pick "${GRID_DRIVERS[@]}")"
+  dmem="$(_pick "${GRID_DRIVER_MEM[@]}")"
+  infl="$(_pick "${GRID_INFLIGHT[@]}")"
+  shcomp="$(_pick "${GRID_SHUFFLE_COMP[@]}")"
+  spcomp="$(_pick "${GRID_SPILL_COMP[@]}")"
+  sbuf="$(_pick "${GRID_FILE_BUF[@]}")"
+  bblk="$(_pick "${GRID_BCAST_BLOCK[@]}")"
+  bcomp="$(_pick "${GRID_BCAST_COMP[@]}")"
+  mfrac="$(_pick "${GRID_MEM_FRAC[@]}")"
+  msfrac="$(_pick "${GRID_MEM_SFRAC[@]}")"
+  rpcmax="$(_pick "${GRID_RPC_MAX[@]}")"
+  rddc="$(_pick "${GRID_RDD_COMP[@]}")"
+  codec="$(_pick "${GRID_CODEC[@]}")"
 
-  inb=$(/opt/hadoop/bin/hdfs dfs -du -s /Wordcount/Input | awk '{print $1}' || echo 0)
-  if awk "BEGIN{exit !($dur>0)}"; then
-    tp=$(python3 - <<PY
-d=float("$dur"); b=int("$inb")
-print(int(b/d) if d>0 else 0)
-PY
-)
-  else
-    tp=0
-  fi
-  echo "$dur" "$tp" "$inb"
-}
+  echo ">>> [$((samples_done+1))/$TARGET_SAMPLES] e.cores=$ecores e.mem=$emem e.inst=$einst d.cores=$dcores d.mem=$dmem infl=$infl shuf=$shcomp/$spcomp sbuf=$sbuf bblk=$bblk bcomp=$bcomp mfrac=$mfrac msfrac=$msfrac rpc=$rpcmax rdd=$rddc codec=$codec"
 
-# --- строим полный список комбинаций
-TMP_LIST=$(mktemp)
-for emem in "${arr_EXEC_MEM[@]}"; do
-for einst in "${arr_EXEC_INST[@]}"; do
-for dmem in "${arr_DRIVER_MEM[@]}"; do
-for mfrac in "${arr_MEM_FRACTION[@]}"; do
-for shcomp in "${arr_SHUFFLE_COMP[@]}"; do
-for spcomp in "${arr_SPILL_COMP[@]}"; do
-for bblk in "${arr_BCAST_BLOCK[@]}"; do
-for infl in "${arr_MAX_IN_FLIGHT[@]}"; do
-for sbuf in "${arr_FILE_BUF[@]}"; do
-for codec in "${arr_IO_CODEC[@]}"; do
-  echo "${EXEC_CORES},${emem},${einst},${DRIVER_CORES},${dmem},${mfrac},${shcomp},${spcomp},${bblk},${infl},${sbuf},${codec}" >> "$TMP_LIST"
-done; done; done; done; done; done; done; done; done; done
+  write_conf "$ecores" "$emem" "$einst" "$dcores" "$dmem" "$infl" "$shcomp" "$spcomp" "$sbuf" "$bblk" "$bcomp" "$mfrac" "$msfrac" "$rpcmax" "$rddc" "$codec"
 
-# --- случайная подвыборка до MAX_RUNS
-COMBOS=$(mktemp)
-if command -v shuf >/dev/null 2>&1; then
-  shuf -n "$MAX_RUNS" "$TMP_LIST" > "$COMBOS"
-else
-  head -n "$MAX_RUNS" "$TMP_LIST" > "$COMBOS"
-fi
-rm -f "$TMP_LIST"
+  before_lines=$(wc -l < "$REPORT" 2>/dev/null || echo 0)
+  ok=0
+  for r in $(seq 1 "$REPEATS"); do
+    echo "    - run #$r / $REPEATS"
+    set +e; run_once; rc=$?; set -e
+    [[ "$rc" -eq 0 ]] && ok=$((ok+1))
+  done
 
-# --- подготовка входных данных один раз
-prepare_input_once
+ median=$(awk 'END{print $5}' "$REPORT" | tail -n 9 | sort -n | \
+         awk '{a[NR]=$1} END{print (NR%2) ? a[(NR+1)/2] : (a[NR/2]+a[NR/2+1])/2}')
 
-# --- основной цикл
-run_id=0
-total=$(wc -l < "$COMBOS")
-while IFS=',' read -r ecores emem einst dcores dmem mfrac shcomp spcomp bblk infl sbuf codec; do
-  run_id=$((run_id+1))
-  echo
-  echo ">>> (${run_id}/${total}) emem=${emem} einst=${einst} mfrac=${mfrac} shuf=${shcomp}/${spcomp} bblk=${bblk} infl=${infl} sbuf=${sbuf} codec=${codec}"
+  rc_all=$([[ "$ok" -eq "$REPEATS" ]] && echo 0 || echo 1)
+  echo "    → median=${median}s (ok ${ok}/${REPEATS})"
 
-  write_conf "$ecores" "$emem" "$einst" "$dcores" "$dmem" "$mfrac" "$shcomp" "$spcomp" "$bblk" "$infl" "$sbuf" "$codec"
+  echo "${NUM_WORKERS},${WORKER_CORES},${WORKER_MEM_GB},${PROFILE},${ecores},${emem},${einst},${dcores},${dmem},${mfrac},${msfrac},${shcomp},${spcomp},${sbuf},${bblk},${bcomp},${infl},${codec},${rpcmax},${rddc},${median},${rc_all}" >> "$CSV"
+  samples_done=$((samples_done+1))
+done
 
-  /opt/hadoop/bin/hdfs dfs -rm -r -skipTrash /Wordcount/Output >/dev/null 2>&1 || true
-  set +e
-  run_once
-  rc=$?
-  set -e
-
-  read -r DUR TP INB < <(parse_metrics)
-  echo "${PROFILE},${ecores},${emem},${einst},${dcores},${dmem},${mfrac},${shcomp},${spcomp},${bblk},${infl},${sbuf},${codec},${DUR},${TP},${INB},${rc}" >> "$CSV"
-
-  sleep 1
-done < "$COMBOS"
-rm -f "$COMBOS"
-
-echo "=== DONE (${PROFILE}). CSV: $CSV ==="
+echo "=== DONE collect: wrote ${TARGET_SAMPLES} rows to ${CSV} ==="
