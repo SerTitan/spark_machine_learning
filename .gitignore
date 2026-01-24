@@ -1,0 +1,36 @@
+# Python
+.venv/
+__pycache__/
+*.pyc
+*.pyo
+.pytest_cache/
+
+# Data (большие файлы, собираются локально)
+data/snapshots/
+data/wc_train_all.csv
+data/hibench.report
+
+# Models (генерируются при обучении)
+models/rf_baseline/*.joblib
+models/rf_baseline/*.csv
+models/rf_baseline/*.json
+models/rf_baseline/plots/
+
+# IDE
+.idea/
+.vscode/
+*.swp
+*.swo
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Logs
+*.log
+
+# MLflow
+mlruns/
+
+# Archive (устаревшие файлы)
+archive/

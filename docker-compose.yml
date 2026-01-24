@@ -1,0 +1,263 @@
+networks:
+  bench-net:
+
+volumes:
+  hdfs-nn:
+  hdfs-dn:
+  spark-history:
+  mlruns:
+  mlartifacts:
+  nm1-local:
+  nm1-logs:
+  nm2-local:
+  nm2-logs:
+
+services:
+  namenode:
+    image: apache/hadoop:3.3.6
+    container_name: namenode
+    hostname: namenode
+    user: "0:0"
+    networks: [bench-net]
+    ports:
+      - "9870:9870"   # NN UI
+      - "8020:8020"   # NN RPC (fs.defaultFS)
+    volumes:
+      - hdfs-nn:/var/lib/hadoop-hdfs
+      - ./hadoop-conf:/opt/hadoop/etc/hadoop:ro
+    environment:
+      - HADOOP_HOME=/opt/hadoop
+      - HADOOP_CONF_DIR=/opt/hadoop/etc/hadoop
+      - PATH=/opt/hadoop/bin:/opt/hadoop/sbin:$PATH
+      - ENSURE_NAMENODE_DIR=/var/lib/hadoop-hdfs/name
+    command: ["hdfs","namenode"]
+    healthcheck:
+      test: ["CMD-SHELL","/opt/hadoop/bin/hdfs dfs -ls / >/dev/null 2>&1 || exit 1"]
+      interval: 5s
+      timeout: 4s
+      retries: 20
+      start_period: 10s
+    restart: unless-stopped
+
+  datanode:
+    image: apache/hadoop:3.3.6
+    container_name: datanode
+    hostname: datanode
+    user: "0:0"
+    depends_on:
+      namenode:
+        condition: service_healthy
+    networks: [bench-net]
+    ports:
+      - "9864:9864"   # DN UI
+    volumes:
+      - hdfs-dn:/var/lib/hadoop-hdfs
+      - ./hadoop-conf:/opt/hadoop/etc/hadoop:ro
+    environment:
+      - HADOOP_HOME=/opt/hadoop
+      - HADOOP_CONF_DIR=/opt/hadoop/etc/hadoop
+      - PATH=/opt/hadoop/bin:/opt/hadoop/sbin:$PATH
+    command: ["hdfs","datanode"]
+    healthcheck:
+      test: ["CMD-SHELL","/opt/hadoop/bin/hdfs dfs -ls / >/dev/null 2>&1 || exit 1"]
+      interval: 5s
+      timeout: 4s
+      retries: 20
+      start_period: 10s
+    restart: unless-stopped
+
+  resourcemanager:
+    image: apache/hadoop:3.3.6
+    container_name: resourcemanager
+    hostname: resourcemanager
+    depends_on:
+      namenode:
+        condition: service_healthy
+      datanode:
+        condition: service_healthy
+    networks: [bench-net]
+    ports:
+      - "8088:8088"
+      - "8030:8030"
+      - "8031:8031"
+      - "8032:8032"
+      - "8033:8033"
+    volumes:
+      - ./hadoop-conf:/opt/hadoop/etc/hadoop:ro
+    environment:
+      - HADOOP_HOME=/opt/hadoop
+      - HADOOP_CONF_DIR=/opt/hadoop/etc/hadoop
+      - PATH=/opt/hadoop/bin:/opt/hadoop/sbin:$PATH
+    command: ["yarn","resourcemanager"]
+    healthcheck:
+      test: ["CMD-SHELL","ps -ef | grep -q '[y]arn.resourcemanager'"]
+      interval: 5s
+      timeout: 5s
+      retries: 60
+      start_period: 60s
+    restart: unless-stopped
+
+  nodemanager-1:
+    image: apache/hadoop:3.3.6
+    container_name: nodemanager-1
+    hostname: nodemanager-1
+    user: "0:0"                            # ← добавить
+    networks: [bench-net]
+    depends_on:
+      resourcemanager: { condition: service_healthy }
+    environment:
+      - HADOOP_HOME=/opt/hadoop
+      - HADOOP_CONF_DIR=/opt/hadoop/etc/hadoop
+      - PATH=/opt/hadoop/bin:/opt/hadoop/sbin:$PATH
+    volumes:
+      - ./hadoop-conf:/opt/hadoop/etc/hadoop:ro
+      - nm1-local:/hadoop/yarn/local
+      - nm1-logs:/var/log/hadoop-yarn
+    # гарантируем создание и права на каталоги, потом стартуем NM
+    command: ["bash","-lc","mkdir -p /hadoop/yarn/local /var/log/hadoop-yarn && chmod -R 1777 /hadoop/yarn/local /var/log/hadoop-yarn && exec yarn nodemanager"]
+    ports:
+      - "8042:8042"
+    restart: unless-stopped
+
+  nodemanager-2:
+    image: apache/hadoop:3.3.6
+    container_name: nodemanager-2
+    hostname: nodemanager-2
+    user: "0:0"                            # ← добавить
+    networks: [bench-net]
+    depends_on:
+      resourcemanager: { condition: service_healthy }
+    environment:
+      - HADOOP_HOME=/opt/hadoop
+      - HADOOP_CONF_DIR=/opt/hadoop/etc/hadoop
+      - PATH=/opt/hadoop/bin:/opt/hadoop/sbin:$PATH
+    volumes:
+      - ./hadoop-conf:/opt/hadoop/etc/hadoop:ro
+      - nm2-local:/hadoop/yarn/local
+      - nm2-logs:/var/log/hadoop-yarn
+    command: ["bash","-lc","mkdir -p /hadoop/yarn/local /var/log/hadoop-yarn && chmod -R 1777 /hadoop/yarn/local /var/log/hadoop-yarn && exec yarn nodemanager"]
+    ports:
+      - "8043:8042"
+    restart: unless-stopped
+
+  spark-master:
+    image: bitnami/spark:3.3
+    container_name: spark-master
+    hostname: spark-master
+    environment:
+      - SPARK_MODE=master
+      - SPARK_RPC_AUTHENTICATION_ENABLED=no
+      - SPARK_RPC_ENCRYPTION_ENABLED=no
+      - SPARK_LOCAL_STORAGE_ENCRYPTION_ENABLED=no
+      - SPARK_SSL_ENABLED=no
+    ports:
+      - "8080:8080"   # Spark Master UI
+      - "7077:7077"   # Spark Master RPC
+    volumes:
+      - spark-history:/opt/spark/history
+    networks: [bench-net]
+    healthcheck:
+      test: ["CMD-SHELL","/bin/bash -lc 'exec 3<>/dev/tcp/127.0.0.1/8080' || exit 1"]
+      interval: 5s
+      timeout: 4s
+      retries: 30
+      start_period: 10s
+    restart: unless-stopped
+
+  spark-worker-1:
+    image: bitnami/spark:3.3
+    container_name: spark-worker-1
+    environment:
+      - SPARK_MODE=worker
+      - SPARK_MASTER_URL=spark://spark-master:7077
+      - SPARK_WORKER_MEMORY=4G
+      - SPARK_WORKER_CORES=2
+    depends_on:
+      spark-master:
+        condition: service_healthy
+    networks: [bench-net]
+    restart: unless-stopped
+
+  spark-worker-2:
+    image: bitnami/spark:3.3
+    container_name: spark-worker-2
+    environment:
+      - SPARK_MODE=worker
+      - SPARK_MASTER_URL=spark://spark-master:7077
+      - SPARK_WORKER_MEMORY=4G
+      - SPARK_WORKER_CORES=2
+    depends_on:
+      spark-master:
+        condition: service_healthy
+    networks: [bench-net]
+    restart: unless-stopped
+
+  spark-history:
+    image: bitnami/spark:3.3
+    container_name: spark-history
+    depends_on:
+      spark-master:
+        condition: service_healthy
+    networks: [bench-net]
+    ports:
+      - "18080:18080"
+    volumes:
+      - spark-history:/opt/spark/history
+    environment:
+      - SPARK_HISTORY_OPTS=-Dspark.history.fs.logDirectory=file:/opt/spark/history -Dspark.history.ui.port=18080
+    command: ["bash","-lc","mkdir -p /opt/spark/history && /opt/bitnami/spark/sbin/start-history-server.sh && sleep infinity"]
+    healthcheck:
+      test: ["CMD-SHELL","/bin/bash -lc 'exec 3<>/dev/tcp/127.0.0.1/18080' || exit 1"]
+      interval: 5s
+      timeout: 4s
+      retries: 30
+      start_period: 10s
+    restart: unless-stopped
+
+  hibench:
+    build:
+      context: ./hibench
+      dockerfile: Dockerfile
+    container_name: hibench
+    depends_on:
+      namenode:        { condition: service_healthy }
+      datanode:        { condition: service_healthy }
+      resourcemanager: { condition: service_healthy }
+      spark-master:    { condition: service_healthy }
+    networks: [bench-net]
+    volumes:
+      - ./hadoop-conf:/opt/hadoop/etc/hadoop:ro
+    environment:
+      - HADOOP_HOME=/opt/hadoop
+      - HADOOP_CONF_DIR=/opt/hadoop/etc/hadoop
+      - PATH=/opt/hadoop/bin:/opt/hadoop/sbin:/opt/spark/bin:$PATH
+    command: ["bash","-lc","sleep infinity"]
+    healthcheck:
+      test: ["CMD-SHELL","/bin/bash -lc '/opt/hadoop/bin/hdfs dfs -fs hdfs://namenode:8020 -ls / >/dev/null 2>&1 && [ -f /opt/hibench/sparkbench/sparkbench-assembly/target/sparkbench-assembly.jar ]'"]
+      interval: 5s
+      timeout: 4s
+      retries: 20
+      start_period: 15s
+    restart: unless-stopped
+
+  mlflow:
+    build:
+      context: ./mlflow
+      dockerfile: Dockerfile
+    container_name: mlflow
+    networks: [bench-net]
+    ports:
+      - "5000:5000"
+    environment:
+      - MLFLOW_ARTIFACTS_DESTINATION=file:///mlartifacts
+    volumes:
+      - mlruns:/mlruns
+      - mlartifacts:/mlartifacts
+    command: >
+      bash -lc "
+      mlflow server
+      --host 0.0.0.0 --port 5000
+      --backend-store-uri file:/mlruns
+      --default-artifact-root file:/mlartifacts
+      "
+    restart: unless-stopped

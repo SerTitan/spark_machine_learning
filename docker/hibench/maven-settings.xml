@@ -1,0 +1,26 @@
+<settings xmlns="http://maven.apache.org/SETTINGS/1.0.0"
+          xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+          xsi:schemaLocation="http://maven.apache.org/SETTINGS/1.0.0
+                              https://maven.apache.org/xsd/settings-1.0.0.xsd">
+  <mirrors>
+    <mirror>
+      <id>huaweicloud</id>
+      <mirrorOf>central</mirrorOf>
+      <name>HuaweiCloud Maven Mirror</name>
+      <url>https://repo.huaweicloud.com/repository/maven/</url>
+    </mirror>
+  </mirrors>
+  <profiles>
+    <profile>
+      <id>timeouts</id>
+      <activation><activeByDefault>true</activeByDefault></activation>
+      <properties>
+        <maven.wagon.http.connectionTimeout>60000</maven.wagon.http.connectionTimeout>
+        <maven.wagon.http.socketTimeout>60000</maven.wagon.http.socketTimeout>
+        <maven.wagon.http.retryHandler.count>3</maven.wagon.http.retryHandler.count>
+        <maven.wagon.http.pool>false</maven.wagon.http.pool>
+        <maven.wagon.rto>60000</maven.wagon.rto>
+      </properties>
+    </profile>
+  </profiles>
+</settings>

@@ -1,0 +1,26 @@
+<configuration>
+  <property>
+    <name>mapreduce.framework.name</name>
+    <value>yarn</value>
+  </property>
+
+  <!-- AM и контейнерам нужен HADOOP_MAPRED_HOME -->
+  <property>
+    <name>yarn.app.mapreduce.am.env</name>
+    <value>HADOOP_MAPRED_HOME=/opt/hadoop</value>
+  </property>
+  <property>
+    <name>mapreduce.map.env</name>
+    <value>HADOOP_MAPRED_HOME=/opt/hadoop</value>
+  </property>
+  <property>
+    <name>mapreduce.reduce.env</name>
+    <value>HADOOP_MAPRED_HOME=/opt/hadoop</value>
+  </property>
+
+  <!-- staging в HDFS -->
+  <property>
+    <name>mapreduce.jobtracker.staging.root.dir</name>
+    <value>/tmp/hadoop-yarn/staging</value>
+  </property>
+</configuration>
