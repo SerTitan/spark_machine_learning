@@ -25,15 +25,16 @@ services:
       - "8020:8020"   # NN RPC (fs.defaultFS)
     volumes:
       - hdfs-nn:/var/lib/hadoop-hdfs
-      - ./hadoop-conf:/opt/hadoop/etc/hadoop:ro
+      - ./config/hadoop:/opt/hadoop/etc/hadoop:ro
     environment:
       - HADOOP_HOME=/opt/hadoop
       - HADOOP_CONF_DIR=/opt/hadoop/etc/hadoop
       - PATH=/opt/hadoop/bin:/opt/hadoop/sbin:$PATH
       - ENSURE_NAMENODE_DIR=/var/lib/hadoop-hdfs/name
-    command: ["hdfs","namenode"]
+    entrypoint: ["/bin/sh", "-c"]
+    command: ["hdfs namenode"]
     healthcheck:
-      test: ["CMD-SHELL","/opt/hadoop/bin/hdfs dfs -ls / >/dev/null 2>&1 || exit 1"]
+      test: ["CMD", "/opt/hadoop/bin/hdfs", "dfsadmin", "-report"]
       interval: 5s
       timeout: 4s
       retries: 20
@@ -53,14 +54,15 @@ services:
       - "9864:9864"   # DN UI
     volumes:
       - hdfs-dn:/var/lib/hadoop-hdfs
-      - ./hadoop-conf:/opt/hadoop/etc/hadoop:ro
+      - ./config/hadoop:/opt/hadoop/etc/hadoop:ro
     environment:
       - HADOOP_HOME=/opt/hadoop
       - HADOOP_CONF_DIR=/opt/hadoop/etc/hadoop
       - PATH=/opt/hadoop/bin:/opt/hadoop/sbin:$PATH
-    command: ["hdfs","datanode"]
+    entrypoint: ["/bin/sh", "-c"]
+    command: ["hdfs datanode"]
     healthcheck:
-      test: ["CMD-SHELL","/opt/hadoop/bin/hdfs dfs -ls / >/dev/null 2>&1 || exit 1"]
+      test: ["CMD", "/opt/hadoop/bin/hdfs", "dfs", "-ls", "/"]
       interval: 5s
       timeout: 4s
       retries: 20
@@ -84,14 +86,15 @@ services:
       - "8032:8032"
       - "8033:8033"
     volumes:
-      - ./hadoop-conf:/opt/hadoop/etc/hadoop:ro
+      - ./config/hadoop:/opt/hadoop/etc/hadoop:ro
     environment:
       - HADOOP_HOME=/opt/hadoop
       - HADOOP_CONF_DIR=/opt/hadoop/etc/hadoop
       - PATH=/opt/hadoop/bin:/opt/hadoop/sbin:$PATH
-    command: ["yarn","resourcemanager"]
+    entrypoint: ["/bin/sh", "-c"]
+    command: ["yarn resourcemanager"]
     healthcheck:
-      test: ["CMD-SHELL","ps -ef | grep -q '[y]arn.resourcemanager'"]
+      test: ["CMD", "pgrep", "-f", "resourcemanager"]
       interval: 5s
       timeout: 5s
       retries: 60
@@ -111,11 +114,11 @@ services:
       - HADOOP_CONF_DIR=/opt/hadoop/etc/hadoop
       - PATH=/opt/hadoop/bin:/opt/hadoop/sbin:$PATH
     volumes:
-      - ./hadoop-conf:/opt/hadoop/etc/hadoop:ro
+      - ./config/hadoop:/opt/hadoop/etc/hadoop:ro
       - nm1-local:/hadoop/yarn/local
       - nm1-logs:/var/log/hadoop-yarn
-    # гарантируем создание и права на каталоги, потом стартуем NM
-    command: ["bash","-lc","mkdir -p /hadoop/yarn/local /var/log/hadoop-yarn && chmod -R 1777 /hadoop/yarn/local /var/log/hadoop-yarn && exec yarn nodemanager"]
+    entrypoint: ["/bin/sh", "-c"]
+    command: ["mkdir -p /hadoop/yarn/local /var/log/hadoop-yarn && chmod -R 1777 /hadoop/yarn/local /var/log/hadoop-yarn && exec yarn nodemanager"]
     ports:
       - "8042:8042"
     restart: unless-stopped
@@ -133,10 +136,11 @@ services:
       - HADOOP_CONF_DIR=/opt/hadoop/etc/hadoop
       - PATH=/opt/hadoop/bin:/opt/hadoop/sbin:$PATH
     volumes:
-      - ./hadoop-conf:/opt/hadoop/etc/hadoop:ro
+      - ./config/hadoop:/opt/hadoop/etc/hadoop:ro
       - nm2-local:/hadoop/yarn/local
       - nm2-logs:/var/log/hadoop-yarn
-    command: ["bash","-lc","mkdir -p /hadoop/yarn/local /var/log/hadoop-yarn && chmod -R 1777 /hadoop/yarn/local /var/log/hadoop-yarn && exec yarn nodemanager"]
+    entrypoint: ["/bin/sh", "-c"]
+    command: ["mkdir -p /hadoop/yarn/local /var/log/hadoop-yarn && chmod -R 1777 /hadoop/yarn/local /var/log/hadoop-yarn && exec yarn nodemanager"]
     ports:
       - "8043:8042"
     restart: unless-stopped
@@ -197,7 +201,7 @@ services:
       spark-master:    { condition: service_healthy }
     networks: [bench-net]
     volumes:
-      - ./hadoop-conf:/opt/hadoop/etc/hadoop:ro
+      - ./config/hadoop:/opt/hadoop/etc/hadoop:ro
     environment:
       - HADOOP_HOME=/opt/hadoop
       - HADOOP_CONF_DIR=/opt/hadoop/etc/hadoop
