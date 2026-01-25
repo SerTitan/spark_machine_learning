@@ -125,19 +125,6 @@
 
 ---
 
-## archive/ — Устаревшие файлы
-
-### archive/old_scripts/
-| Файл | Описание |
-|------|----------|
-| `pyspark_job.py` | Тестовый PySpark-джоб (не используется) |
-| `loop_wordcount_hibench.sh` | Старая версия цикла запуска WordCount |
-| `wordcount_9runs.sh` | Скрипт 9 прогонов (заменён на collect_wordcount_data.sh) |
-| `wordcount_runs_java.sh` | Java-версия запуска (не используется) |
-| `parse_report_to_csv.py` | Парсер отчётов (функционал встроен в collect_wordcount_data.sh) |
-
----
-
 ## Формат датасета (wc_train_all.csv)
 
 22 колонки:

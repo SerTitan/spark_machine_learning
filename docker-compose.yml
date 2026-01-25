@@ -1,5 +1,6 @@
 networks:
   bench-net:
+    name: spark_machine_learning_bench-net
 
 volumes:
   hdfs-nn:
@@ -14,7 +15,7 @@ volumes:
 
 services:
   namenode:
-    image: apache/hadoop:3.3.6
+    image: sertitanius/spark_machine_learning-hadoop:3.3.6
     container_name: namenode
     hostname: namenode
     user: "0:0"
@@ -40,7 +41,7 @@ services:
     restart: unless-stopped
 
   datanode:
-    image: apache/hadoop:3.3.6
+    image: sertitanius/spark_machine_learning-hadoop:3.3.6
     container_name: datanode
     hostname: datanode
     user: "0:0"
@@ -67,7 +68,7 @@ services:
     restart: unless-stopped
 
   resourcemanager:
-    image: apache/hadoop:3.3.6
+    image: sertitanius/spark_machine_learning-hadoop:3.3.6
     container_name: resourcemanager
     hostname: resourcemanager
     depends_on:
@@ -98,7 +99,7 @@ services:
     restart: unless-stopped
 
   nodemanager-1:
-    image: apache/hadoop:3.3.6
+    image: sertitanius/spark_machine_learning-hadoop:3.3.6
     container_name: nodemanager-1
     hostname: nodemanager-1
     user: "0:0"                            # ← добавить
@@ -120,7 +121,7 @@ services:
     restart: unless-stopped
 
   nodemanager-2:
-    image: apache/hadoop:3.3.6
+    image: sertitanius/spark_machine_learning-hadoop:3.3.6
     container_name: nodemanager-2
     hostname: nodemanager-2
     user: "0:0"                            # ← добавить
@@ -141,7 +142,7 @@ services:
     restart: unless-stopped
 
   spark-master:
-    image: bitnami/spark:3.3
+    image: sertitanius/spark_machine_learning-spark:3.3
     container_name: spark-master
     hostname: spark-master
     environment:
@@ -164,36 +165,8 @@ services:
       start_period: 10s
     restart: unless-stopped
 
-  spark-worker-1:
-    image: bitnami/spark:3.3
-    container_name: spark-worker-1
-    environment:
-      - SPARK_MODE=worker
-      - SPARK_MASTER_URL=spark://spark-master:7077
-      - SPARK_WORKER_MEMORY=4G
-      - SPARK_WORKER_CORES=2
-    depends_on:
-      spark-master:
-        condition: service_healthy
-    networks: [bench-net]
-    restart: unless-stopped
-
-  spark-worker-2:
-    image: bitnami/spark:3.3
-    container_name: spark-worker-2
-    environment:
-      - SPARK_MODE=worker
-      - SPARK_MASTER_URL=spark://spark-master:7077
-      - SPARK_WORKER_MEMORY=4G
-      - SPARK_WORKER_CORES=2
-    depends_on:
-      spark-master:
-        condition: service_healthy
-    networks: [bench-net]
-    restart: unless-stopped
-
   spark-history:
-    image: bitnami/spark:3.3
+    image: sertitanius/spark_machine_learning-spark:3.3
     container_name: spark-history
     depends_on:
       spark-master:
@@ -215,9 +188,7 @@ services:
     restart: unless-stopped
 
   hibench:
-    build:
-      context: ./hibench
-      dockerfile: Dockerfile
+    image: sertitanius/spark_machine_learning-hibench:1.0.0
     container_name: hibench
     depends_on:
       namenode:        { condition: service_healthy }
@@ -241,9 +212,7 @@ services:
     restart: unless-stopped
 
   mlflow:
-    build:
-      context: ./mlflow
-      dockerfile: Dockerfile
+    image: sertitanius/spark_machine_learning-mlflow:1.0.0
     container_name: mlflow
     networks: [bench-net]
     ports:
