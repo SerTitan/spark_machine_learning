@@ -53,65 +53,74 @@
 
 ```
 spark_machine_learning/
-├── work/
+├── models/                             # ML модели
+│   ├── __init__.py                     # Экспорты модуля
+│   ├── data.py                         # Загрузка и препроцессинг данных
+│   ├── baseline.py                     # Baseline: Dummy, RF, SA, MLP
+│   ├── dnn_predictor.py                # DNN предиктор (PyTorch)
+│   ├── rl_optimizer.py                 # RL: Q-Learning, DQN, PPO, Bayesian
+│   └── README.md                       # Документация модуля
+├── training/                           # Скрипты обучения
+│   ├── train_baseline.py               # Обучение baseline с MLflow
+│   ├── train_dnn.py                    # Обучение DNN предиктора
+│   ├── train_rl.py                     # Обучение RL оптимизаторов
+│   └── collect_agg.py                  # Агрегация CSV файлов
+├── scripts/                            # Скрипты сбора данных
 │   ├── run_wordcount_experiments.sh    # Оркестратор сбора данных
-│   └── collect_wordcount_data.sh       # Сбор датасета внутри HiBench
-├── models/
-│   ├── dnn_predictor.py                # DNN для предсказания времени
-│   ├── rl_optimizer.py                 # RL-агенты для поиска параметров
-│   └── baseline_models.py              # Baseline модели (RF, SA)
-├── training/
-│   ├── train_dnn.py                    # Обучение DNN
-│   ├── train_rl.py                     # Обучение RL-агентов
-│   └── hyperparameter_search.py        # Подбор гиперпараметров
-├── recommender/
-│   ├── api.py                          # REST API рекомендательной системы
+│   ├── collect_wordcount_data.sh       # Сбор датасета внутри HiBench
+│   └── utils/                          # Вспомогательные скрипты
+├── recommender/                        # Рекомендательная система (TODO)
+│   ├── api.py                          # REST API (FastAPI)
 │   ├── inference.py                    # Инференс моделей
 │   └── config_generator.py             # Генерация spark.conf
-├── evaluation/
-│   ├── metrics.py                      # MAE, RMSE, MAPE, R²
-│   ├── benchmark.py                    # Сравнение с default/random
-│   └── ablation_study.py               # Анализ важности компонентов
-├── tools/
-│   ├── collect_agg.py                  # Агрегация CSV файлов
-│   └── preprocess.py                   # Препроцессинг данных
+├── docker/                             # Docker конфиги
+│   ├── hibench/                        # HiBench образ
+│   └── mlflow/                         # MLflow образ
+├── config/                             # Конфигурации Hadoop/Spark
 ├── out/                                # Результаты экспериментов
-├── train_baseline_mlflow.py            # Baseline обучение с MLflow
-├── docker-compose.yml                  # Spark кластер
+├── docker-compose.yml                  # Spark + HDFS + MLflow кластер
 └── README.md
 ```
 
 ## План разработки
 
-### Фаза 1: Сбор данных (текущая)
+### Фаза 1: Сбор данных
 - [x] Настройка HiBench + Spark кластера
 - [x] Скрипты сбора данных с медианой по N прогонов
-- [ ] **В процессе**: Сбор 150 сэмплов WordCount (3 топологии × 50 сэмплов)
+- [x] Исправление docker-compose (namenode formatting, hibench healthcheck)
+- [ ] **В процессе**: Сбор 150+ сэмплов WordCount (3 топологии × 50 сэмплов)
 - [ ] Валидация и очистка датасета
 
-### Фаза 2: Baseline модели
-- [ ] DummyRegressor (median baseline)
-- [ ] RandomForestRegressor + RandomizedSearchCV
-- [ ] RandomForestRegressor + Simulated Annealing
-- [ ] MLP (sklearn)
-- [ ] Сравнительный анализ MAE/RMSE/MAPE/R²
+### Фаза 2: Baseline модели ✅
+- [x] Модуль загрузки данных (`models/data.py`)
+- [x] DummyRegressor (median baseline)
+- [x] RandomForestRegressor + RandomizedSearchCV
+- [x] RandomForestRegressor + Simulated Annealing
+- [x] MLP (sklearn)
+- [x] Скрипт обучения с MLflow (`training/train_baseline.py`)
+- [ ] Сравнительный анализ MAE/RMSE/MAPE/R² (после получения датасета)
 
-### Фаза 3: DNN Performance Predictor
-- [ ] Архитектура: Input(22) → Dense(128) → Dense(64) → Output(1)
-- [ ] Препроцессинг: OneHotEncoder для категориальных, StandardScaler для числовых
-- [ ] Early stopping, learning rate scheduling
-- [ ] Сравнение PyTorch vs TensorFlow vs sklearn.MLPRegressor
+### Фаза 3: DNN Performance Predictor ✅
+- [x] Архитектура: Input(n) → Dense(128) → Dense(64) → Output(1)
+- [x] Препроцессинг: OneHotEncoder + StandardScaler
+- [x] Early stopping, learning rate scheduling
+- [x] PyTorch реализация с sklearn fallback
+- [x] Скрипт обучения (`training/train_dnn.py`)
+- [ ] Обучение и оценка (после получения датасета)
 
-### Фаза 4: Reinforcement Learning Optimizer
-- [ ] **Q-Learning** (как в статье)
-- [ ] **Deep Q-Network (DQN)**
-- [ ] **Policy Gradient методы** (REINFORCE, PPO, A2C)
-- [ ] **Bayesian Optimization**
+### Фаза 4: Reinforcement Learning Optimizer ✅
+- [x] **Q-Learning** (табличный, как в статье)
+- [x] **Deep Q-Network (DQN)** с Experience Replay
+- [x] **PPO/A2C** через stable-baselines3
+- [x] **Bayesian Optimization** через Optuna
+- [x] Скрипт оптимизации (`training/train_rl.py`)
+- [ ] Обучение и сравнение алгоритмов (после получения датасета)
 
 ### Фаза 5: Рекомендательная система
 - [ ] REST API (FastAPI)
 - [ ] CLI интерфейс
 - [ ] Генерация spark.conf файла
+- [ ] Web UI (опционально)
 
 ### Фаза 6: Расширение на другие бенчмарки
 - [ ] PageRank, K-Means, TeraSort
@@ -298,31 +307,64 @@ Parameters:
 
 ## Запуск
 
-### Сбор датасета
+### 0. Установка зависимостей
 ```bash
-# Убедиться что master запущен
-docker-compose up -d spark-master
+pip install numpy pandas scikit-learn matplotlib joblib mlflow
+pip install torch                        # для DNN и DQN
+pip install optuna                       # для Bayesian Optimization
+pip install gymnasium stable-baselines3  # для PPO/A2C
+```
 
-# Запустить сбор (150 сэмплов, 6 прогонов на медиану)
-./work/run_wordcount_experiments.sh
+### 1. Запуск кластера
+```bash
+docker-compose up -d
+# Проверить статус
+docker-compose ps
+```
+
+### 2. Сбор датасета
+```bash
+# Запустить сбор (выполняется внутри hibench контейнера)
+docker exec -it hibench bash
+cd /opt/hibench
+./scripts/collect_wordcount_data.sh
 
 # Забрать результат
 docker cp hibench:/opt/hibench/report/wc_train_all.csv ./out/
 ```
 
-### Обучение baseline
+### 3. Обучение baseline моделей
 ```bash
-# Запустить MLflow server
-mlflow server --host 0.0.0.0 --port 5000
-
-# Обучить baseline модели
-python train_baseline_mlflow.py --csv ./out/wc_train_all.csv --outdir ./out/baseline
+python training/train_baseline.py \
+    --csv ./out/wc_train_all.csv \
+    --outdir ./out/baseline \
+    --mlflow
 ```
 
-### Обучение DNN + RL (TODO)
+### 4. Обучение DNN предиктора
 ```bash
-python training/train_dnn.py --csv ./out/wc_train_all.csv
-python training/train_rl.py --dnn-model ./models/dnn_predictor.pt
+python training/train_dnn.py \
+    --csv ./out/wc_train_all.csv \
+    --outdir ./out/dnn \
+    --hidden-sizes 128,64 \
+    --epochs 500 \
+    --mlflow
+```
+
+### 5. Запуск RL оптимизации
+```bash
+python training/train_rl.py \
+    --csv ./out/wc_train_all.csv \
+    --dnn-model ./out/dnn/model \
+    --outdir ./out/rl \
+    --workers 4 --worker-cores 2 --worker-mem 4 \
+    --profile large \
+    --algorithm all  # или: qlearning, dqn, ppo, bayesian
+```
+
+### 6. Просмотр результатов в MLflow
+```bash
+# MLflow UI доступен по адресу http://localhost:5000
 ```
 
 ### Запуск рекомендательной системы (TODO)

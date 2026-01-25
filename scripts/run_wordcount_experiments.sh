@@ -15,8 +15,8 @@ SNAPSHOTS_DIR="${DATA_DIR}/snapshots"
 mkdir -p "$SNAPSHOTS_DIR"
 
 TOPOLOGIES=(
-  "workers=2;cores=4;mem=8"
-  "workers=3;cores=3;mem=6"
+  # "workers=2;cores=4;mem=8"
+  # "workers=3;cores=3;mem=6"
   "workers=4;cores=2;mem=4"
 )
 

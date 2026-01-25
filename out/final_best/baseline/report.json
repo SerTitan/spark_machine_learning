@@ -1,0 +1,85 @@
+{
+  "task": "WordCount",
+  "dataset": "data/wc_train_merged.csv",
+  "n_train": 256,
+  "n_val": 64,
+  "n_test": 81,
+  "n_features": 21,
+  "models": {
+    "LinearRegression": {
+      "metrics": {
+        "MAE": 2.4699617196808665,
+        "RMSE": 3.0695943888785404,
+        "R2": 0.7526619902111034,
+        "MAPE": 11.70824435893709
+      },
+      "best_params": null
+    },
+    "SVR": {
+      "metrics": {
+        "MAE": 1.5332569393215307,
+        "RMSE": 1.9964724025112313,
+        "R2": 0.8953701747901069,
+        "MAPE": 6.976685666589481
+      },
+      "best_params": null
+    },
+    "DecisionTree": {
+      "metrics": {
+        "MAE": 1.119023699962589,
+        "RMSE": 1.8492669769351977,
+        "R2": 0.9102306447383154,
+        "MAPE": 4.720935511587459
+      },
+      "best_params": null
+    },
+    "ExtraTrees": {
+      "metrics": {
+        "MAE": 0.8549345061728395,
+        "RMSE": 1.3603776036402935,
+        "R2": 0.951421083507842,
+        "MAPE": 3.679976691367641
+      },
+      "best_params": null
+    },
+    "RandomForest_RandomSearch": {
+      "metrics": {
+        "MAE": 0.8154114662832032,
+        "RMSE": 1.1887735190025546,
+        "R2": 0.9629039966825376,
+        "MAPE": 3.5814088598452796
+      },
+      "best_params": {
+        "n_estimators": 100,
+        "min_samples_split": 3,
+        "min_samples_leaf": 2,
+        "max_features": null,
+        "max_depth": 12
+      }
+    },
+    "RandomForest_SimulatedAnnealing": {
+      "metrics": {
+        "MAE": 0.7464320922239825,
+        "RMSE": 1.2145812378509522,
+        "R2": 0.9612758393200714,
+        "MAPE": 3.188379991957974
+      },
+      "best_params": {
+        "n_estimators": 108,
+        "max_depth": 14,
+        "min_samples_split": 10,
+        "min_samples_leaf": 4,
+        "max_features": null
+      }
+    },
+    "MLP": {
+      "metrics": {
+        "MAE": 1.897746776163758,
+        "RMSE": 2.407305204934455,
+        "R2": 0.8478782941007246,
+        "MAPE": 8.670178493322956
+      },
+      "best_params": null
+    }
+  }
+}

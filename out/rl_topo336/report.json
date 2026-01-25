@@ -1,0 +1,129 @@
+{
+  "dataset": "data/wc_train_merged.csv",
+  "model_dir": "out/final_best/baseline",
+  "predictor_type": "rf",
+  "topology": {
+    "topology_workers": "3",
+    "topology_worker_cores": "3",
+    "topology_worker_mem_gb": "6"
+  },
+  "profile": "large",
+  "baseline_time_pred": 18.551120406712556,
+  "baseline_time_data": 18.8715,
+  "default_config": {
+    "executor_cores": 2,
+    "executor_instances": 2,
+    "driver_cores": 1,
+    "executor_memory_mb": 2048,
+    "driver_memory_mb": 1024,
+    "memory_fraction": 0.4,
+    "memory_storageFraction": 0.5,
+    "rpc_message_maxSize": 160,
+    "shuffle_file_buffer_kb": 128,
+    "broadcast_block_mb": 24,
+    "maxSizeInFlight_mb": 96,
+    "shuffle_compress": 0,
+    "spill_compress": 0,
+    "broadcast_compress": 0,
+    "rdd_compress": 0,
+    "io_codec": "snappy"
+  },
+  "results": {
+    "QLearning": {
+      "best_predicted_time": 15.83639075683606,
+      "speedup": 1.171423507512571,
+      "improvement_pct": 14.63377731565041,
+      "best_config": {
+        "executor_cores": 4,
+        "executor_instances": 3,
+        "driver_cores": 1,
+        "executor_memory_mb": 3072,
+        "driver_memory_mb": 4096,
+        "memory_fraction": 0.5,
+        "memory_storageFraction": 0.4,
+        "rpc_message_maxSize": 160,
+        "shuffle_file_buffer_kb": 128,
+        "broadcast_block_mb": 20,
+        "maxSizeInFlight_mb": 88,
+        "shuffle_compress": 0,
+        "spill_compress": 0,
+        "broadcast_compress": 0,
+        "rdd_compress": 1,
+        "io_codec": "lz4"
+      },
+      "n_iterations": 6000
+    },
+    "DQN": {
+      "best_predicted_time": 15.845214676589148,
+      "speedup": 1.170771162483605,
+      "improvement_pct": 14.586211888012441,
+      "best_config": {
+        "executor_cores": 4,
+        "executor_instances": 2,
+        "driver_cores": 1,
+        "executor_memory_mb": 3072,
+        "driver_memory_mb": 4096,
+        "memory_fraction": 0.4,
+        "memory_storageFraction": 0.3,
+        "rpc_message_maxSize": 224,
+        "shuffle_file_buffer_kb": 112,
+        "broadcast_block_mb": 20,
+        "maxSizeInFlight_mb": 88,
+        "shuffle_compress": 0,
+        "spill_compress": 1,
+        "broadcast_compress": 1,
+        "rdd_compress": 1,
+        "io_codec": "lz4"
+      },
+      "n_iterations": 1308
+    },
+    "Bayesian": {
+      "best_predicted_time": 15.867076459931832,
+      "speedup": 1.1691580647234276,
+      "improvement_pct": 14.468365726360801,
+      "best_config": {
+        "executor_cores": 4,
+        "executor_instances": 2,
+        "driver_cores": 1,
+        "executor_memory_mb": 4096,
+        "driver_memory_mb": 4096,
+        "memory_fraction": 0.5,
+        "memory_storageFraction": 0.6,
+        "rpc_message_maxSize": 230,
+        "shuffle_file_buffer_kb": 112,
+        "broadcast_block_mb": 18,
+        "maxSizeInFlight_mb": 72,
+        "shuffle_compress": 0,
+        "spill_compress": 0,
+        "broadcast_compress": 0,
+        "rdd_compress": 0,
+        "io_codec": "lz4"
+      },
+      "n_iterations": 80
+    },
+    "PPO": {
+      "best_predicted_time": 15.883369671429394,
+      "speedup": 1.1679587386347776,
+      "improvement_pct": 14.380537006906929,
+      "best_config": {
+        "executor_cores": 4,
+        "executor_instances": 2,
+        "driver_cores": 1,
+        "executor_memory_mb": 5120,
+        "driver_memory_mb": 3072,
+        "memory_fraction": 0.5,
+        "memory_storageFraction": 0.6,
+        "rpc_message_maxSize": 160,
+        "shuffle_file_buffer_kb": 64,
+        "broadcast_block_mb": 16,
+        "maxSizeInFlight_mb": 72,
+        "shuffle_compress": 0,
+        "spill_compress": 0,
+        "broadcast_compress": 1,
+        "rdd_compress": 1,
+        "io_codec": "lz4"
+      },
+      "n_iterations": 6000
+    }
+  }
+}

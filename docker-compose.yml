@@ -32,7 +32,7 @@ services:
       - PATH=/opt/hadoop/bin:/opt/hadoop/sbin:$PATH
       - ENSURE_NAMENODE_DIR=/var/lib/hadoop-hdfs/name
     entrypoint: ["/bin/sh", "-c"]
-    command: ["hdfs namenode"]
+    command: ["if [ ! -d /var/lib/hadoop-hdfs/name/current ]; then hdfs namenode -format -force -nonInteractive; fi && hdfs namenode"]
     healthcheck:
       test: ["CMD", "/opt/hadoop/bin/hdfs", "dfsadmin", "-report"]
       interval: 5s
@@ -208,7 +208,7 @@ services:
       - PATH=/opt/hadoop/bin:/opt/hadoop/sbin:/opt/spark/bin:$PATH
     command: ["bash","-lc","sleep infinity"]
     healthcheck:
-      test: ["CMD-SHELL","/bin/bash -lc '/opt/hadoop/bin/hdfs dfs -fs hdfs://namenode:8020 -ls / >/dev/null 2>&1 && [ -f /opt/hibench/sparkbench/sparkbench-assembly/target/sparkbench-assembly.jar ]'"]
+      test: ["CMD-SHELL","/bin/bash -lc '/opt/hadoop/bin/hdfs dfs -fs hdfs://namenode:8020 -ls / >/dev/null 2>&1 && [ -f /opt/hibench/sparkbench/assembly/target/sparkbench-assembly-8.0-SNAPSHOT-dist.jar ]'"]
       interval: 5s
       timeout: 4s
       retries: 20

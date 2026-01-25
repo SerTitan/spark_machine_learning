@@ -40,6 +40,7 @@ if [[ ! -s "$CSV" ]]; then
 fi
 
 # -------------------- сетки параметров --------------------
+USE_FIXED=${USE_FIXED:-0}
 _seq_int() { awk -v s="$1" -v e="$2" -v st="${3:-1}" 'BEGIN{for(i=s;i<=e;i+=st)print i}'; }
 _seq_float() {
   python3 - "$@" <<'PY'
@@ -52,23 +53,42 @@ print("\n".join(out))
 PY
 }
 
-mapfile -t GRID_EXEC_CORES < <(_seq_int 1 "$((${WORKER_CORES}<8?${WORKER_CORES}:8))" 1)
-_emax="$((${WORKER_MEM_GB}<8?${WORKER_MEM_GB}:8))"; GRID_EXEC_MEM=(); for g in $(_seq_int 1 "${_emax}" 1); do GRID_EXEC_MEM+=("${g}g"); done
-_imax=$(( NUM_WORKERS<8?NUM_WORKERS:8 )); [[ $_imax -lt 1 ]] && _imax=1
-if [[ $_imax -ge 2 ]]; then mapfile -t GRID_EXEC_INST < <(_seq_int 2 "$_imax" 1); else GRID_EXEC_INST=(1); fi
-mapfile -t GRID_DRIVERS < <(_seq_int 1 4 1)
-GRID_DRIVER_MEM=(1g 2g 3g 4g)
-GRID_INFLIGHT=(48m 56m 64m 72m 80m 88m 96m)
-GRID_SHUFFLE_COMP=(true false)
-GRID_SPILL_COMP=(true false)
-GRID_FILE_BUF=(32k 48k 64k 80k 96k 112k 128k)
-GRID_BCAST_BLOCK=(4m 6m 8m 10m 12m 14m 16m 18m 20m 22m 24m)
-GRID_BCAST_COMP=(true false)
-mapfile -t GRID_MEM_FRAC < <(_seq_float 0.3 0.8 0.1)
-mapfile -t GRID_MEM_SFRAC < <(_seq_float 0.3 0.8 0.1)
-mapfile -t GRID_RPC_MAX < <(_seq_int 128 256 32)
-GRID_RDD_COMP=(true false)
-GRID_CODEC=(lz4 snappy)
+if [[ "$USE_FIXED" == "1" ]]; then
+  GRID_EXEC_CORES=("${FIX_ECORES}")
+  GRID_EXEC_MEM=("${FIX_EMEM}")
+  GRID_EXEC_INST=("${FIX_EINST}")
+  GRID_DRIVERS=("${FIX_DCORES}")
+  GRID_DRIVER_MEM=("${FIX_DMEM}")
+  GRID_INFLIGHT=("${FIX_INFL}")
+  GRID_SHUFFLE_COMP=("${FIX_SHUFFLE_COMP}")
+  GRID_SPILL_COMP=("${FIX_SPILL_COMP}")
+  GRID_FILE_BUF=("${FIX_FILE_BUF}")
+  GRID_BCAST_BLOCK=("${FIX_BCAST_BLOCK}")
+  GRID_BCAST_COMP=("${FIX_BCAST_COMP}")
+  GRID_MEM_FRAC=("${FIX_MEM_FRAC}")
+  GRID_MEM_SFRAC=("${FIX_MEM_SFRAC}")
+  GRID_RPC_MAX=("${FIX_RPC_MAX}")
+  GRID_RDD_COMP=("${FIX_RDD_COMP}")
+  GRID_CODEC=("${FIX_CODEC}")
+else
+  mapfile -t GRID_EXEC_CORES < <(_seq_int 1 "$((${WORKER_CORES}<8?${WORKER_CORES}:8))" 1)
+  _emax="$((${WORKER_MEM_GB}<8?${WORKER_MEM_GB}:8))"; GRID_EXEC_MEM=(); for g in $(_seq_int 1 "${_emax}" 1); do GRID_EXEC_MEM+=("${g}g"); done
+  _imax=$(( NUM_WORKERS<8?NUM_WORKERS:8 )); [[ $_imax -lt 1 ]] && _imax=1
+  if [[ $_imax -ge 2 ]]; then mapfile -t GRID_EXEC_INST < <(_seq_int 2 "$_imax" 1); else GRID_EXEC_INST=(1); fi
+  mapfile -t GRID_DRIVERS < <(_seq_int 1 4 1)
+  GRID_DRIVER_MEM=(1g 2g 3g 4g)
+  GRID_INFLIGHT=(48m 56m 64m 72m 80m 88m 96m)
+  GRID_SHUFFLE_COMP=(true false)
+  GRID_SPILL_COMP=(true false)
+  GRID_FILE_BUF=(32k 48k 64k 80k 96k 112k 128k)
+  GRID_BCAST_BLOCK=(4m 6m 8m 10m 12m 14m 16m 18m 20m 22m 24m)
+  GRID_BCAST_COMP=(true false)
+  mapfile -t GRID_MEM_FRAC < <(_seq_float 0.3 0.8 0.1)
+  mapfile -t GRID_MEM_SFRAC < <(_seq_float 0.3 0.8 0.1)
+  mapfile -t GRID_RPC_MAX < <(_seq_int 128 256 32)
+  GRID_RDD_COMP=(true false)
+  GRID_CODEC=(lz4 snappy)
+fi
 
 _pick() { local arr=("$@"); echo "${arr[RANDOM%${#arr[@]}]}"; }
 

@@ -1,0 +1,39 @@
+{
+  "dataset": "data/wc_train_merged.csv",
+  "n_train": 256,
+  "n_val": 64,
+  "n_test": 81,
+  "n_features": 21,
+  "config": {
+    "hidden_sizes": [
+      64,
+      32,
+      16
+    ],
+    "dropout": 0.0,
+    "learning_rate": 0.003,
+    "batch_size": 16,
+    "max_epochs": 500,
+    "patience": 80,
+    "use_log_target": true
+  },
+  "training": {
+    "best_epoch": 73,
+    "best_val_rmse": 2.9169917981153177,
+    "total_epochs": 153
+  },
+  "metrics": {
+    "validation": {
+      "MAE": 2.158103956341744,
+      "RMSE": 2.9169917981153177,
+      "R2": 0.7950021490650141,
+      "MAPE": 9.300953660911183
+    },
+    "test": {
+      "MAE": 3.0374567131701813,
+      "RMSE": 3.948862233908871,
+      "R2": 0.590670690982521,
+      "MAPE": 13.175717124403322
+    }
+  }
+}
