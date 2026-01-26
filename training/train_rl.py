@@ -165,6 +165,59 @@ def clean_number(v):
     return v
 
 
+def apply_topology_constraints(param_grid: dict, topology: dict) -> dict:
+    """
+    Применяет ограничения топологии к пространству параметров.
+
+    Физические ограничения Spark:
+    - executor_cores не может превышать кол-во ядер на worker
+    - executor_instances не может превышать кол-во workers
+    - executor_memory не может превышать память worker (с запасом на overhead)
+
+    Args:
+        param_grid: исходное пространство параметров
+        topology: топология кластера {topology_workers, topology_worker_cores, topology_worker_mem_gb}
+
+    Returns:
+        Отфильтрованный param_grid
+    """
+    constrained = param_grid.copy()
+
+    workers = int(topology.get("topology_workers", 999))
+    worker_cores = int(topology.get("topology_worker_cores", 999))
+    worker_mem_gb = int(topology.get("topology_worker_mem_gb", 999))
+
+    # executor_cores <= worker_cores
+    if "executor_cores" in constrained:
+        original = constrained["executor_cores"]
+        constrained["executor_cores"] = [v for v in original if v <= worker_cores]
+        if not constrained["executor_cores"]:
+            constrained["executor_cores"] = [min(original)]  # fallback
+        if len(constrained["executor_cores"]) < len(original):
+            print(f"      [Constraint] executor_cores: {len(original)} → {len(constrained['executor_cores'])} values (≤ {worker_cores})")
+
+    # executor_instances <= workers
+    if "executor_instances" in constrained:
+        original = constrained["executor_instances"]
+        constrained["executor_instances"] = [v for v in original if v <= workers]
+        if not constrained["executor_instances"]:
+            constrained["executor_instances"] = [min(original)]
+        if len(constrained["executor_instances"]) < len(original):
+            print(f"      [Constraint] executor_instances: {len(original)} → {len(constrained['executor_instances'])} values (≤ {workers})")
+
+    # executor_memory_mb <= worker_mem_gb * 1024 - 512 (оставляем 512MB на overhead)
+    max_exec_mem_mb = worker_mem_gb * 1024 - 512
+    if "executor_memory_mb" in constrained:
+        original = constrained["executor_memory_mb"]
+        constrained["executor_memory_mb"] = [v for v in original if v <= max_exec_mem_mb]
+        if not constrained["executor_memory_mb"]:
+            constrained["executor_memory_mb"] = [min(original)]
+        if len(constrained["executor_memory_mb"]) < len(original):
+            print(f"      [Constraint] executor_memory_mb: {len(original)} → {len(constrained['executor_memory_mb'])} values (≤ {max_exec_mem_mb}MB)")
+
+    return constrained
+
+
 def memory_to_mb(val: str) -> float:
     s = str(val).strip().lower()
     if s.endswith("g"):
@@ -335,6 +388,10 @@ def main():
         print(f"      {name}: {len(values)} values")
     if len(param_grid) > 5:
         print(f"      ... and {len(param_grid) - 5} more")
+
+    # Применяем ограничения топологии к param_grid
+    print("      Applying topology constraints...")
+    param_grid = apply_topology_constraints(param_grid, topology)
     print()
 
     # Baseline (default config)
