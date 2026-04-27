@@ -1,0 +1,29 @@
+{
+  "config": {
+    "executor_cores": 2,
+    "executor_instances": 1,
+    "driver_cores": 3,
+    "memory_fraction": 0.4,
+    "memory_storageFraction": 0.4,
+    "rpc_message_maxSize": 160,
+    "executor_memory_mb": 2048.0,
+    "driver_memory_mb": 1024.0,
+    "shuffle_file_buffer_kb": 96.0,
+    "broadcast_block_mb": 16.0,
+    "maxSizeInFlight_mb": 48.0,
+    "shuffle_compress": 0,
+    "spill_compress": 0,
+    "broadcast_compress": 0,
+    "rdd_compress": 0,
+    "io_codec": "lz4"
+  },
+  "predicted_s": 80.42293018077599,
+  "speedup": 1.1496188500944837,
+  "default_t": 92.45571651565264,
+  "topology": {
+    "workers": 4,
+    "worker_cores": 2,
+    "worker_memory_gb": 4
+  },
+  "profile": "large"
+}

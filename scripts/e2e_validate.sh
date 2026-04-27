@@ -1,0 +1,256 @@
+#!/usr/bin/env bash
+# E2E-валидация: получаем топ-1 рекомендацию → запускаем реальный HiBench PageRank →
+# сравниваем фактическое время с предсказанным.
+#
+# Предварительные условия:
+#   - docker-compose запущен (hibench, spark-master, HDFS)
+#   - сервис recommender запущен на RECOMMENDER_URL
+#
+# ВАЖНО: локальная машина.
+#   Лёгкий запуск (не упадёт): WORKERS=2 CORES=2 RAM_GB=4
+#   Репрезентативный (из зоны обучения): WORKERS=4 CORES=2 RAM_GB=4
+#     — именно эта топология использовалась при сборе датасета локально.
+#     Если локальная машина не вытягивает 4 воркера × 2 ядра × 4 ГБ,
+#     запускайте скрипт на той же машине, где собирался датасет.
+#
+# Использование:
+#   bash scripts/e2e_validate.sh
+#   WORKERS=4 CORES=2 RAM_GB=4 PROFILE=large bash scripts/e2e_validate.sh
+#   MODEL_NAME=dnn bash scripts/e2e_validate.sh
+set -euo pipefail
+
+WORKERS="${WORKERS:-2}"
+CORES="${CORES:-2}"
+RAM_GB="${RAM_GB:-4}"
+PROFILE="${PROFILE:-large}"
+MODEL_NAME="${MODEL_NAME:-rf}"   # rf | dnn | ql
+REPEATS="${REPEATS:-3}"
+RECOMMENDER_URL="${RECOMMENDER_URL:-http://localhost:8001}"
+DOCKER_NET="${DOCKER_NET:-spark_machine_learning_new_bench-net}"
+SPARK_WORKER_IMAGE="${SPARK_WORKER_IMAGE:-sertitanius/spark_machine_learning-spark:3.3}"
+HIBENCH_CONTAINER="${HIBENCH_CONTAINER:-hibench}"
+SPARK_CONF_PATH="/opt/hibench/conf/spark.conf"
+HIBENCH_REPORT="/opt/hibench/report/hibench.report"
+
+# ── Воркеры ──────────────────────────────────────────────────────────────────
+
+kill_workers() {
+  docker ps -q --filter "name=spark-worker-" | xargs -r docker stop >/dev/null 2>&1 || true
+}
+
+start_workers() {
+  kill_workers
+  echo ">>> Запускаем ${WORKERS} воркеров × ${CORES} ядер × ${RAM_GB} ГБ"
+  for i in $(seq 1 "$WORKERS"); do
+    docker run -d --rm \
+      --name "spark-worker-$i" \
+      --hostname "spark-worker-$i" \
+      --network "$DOCKER_NET" \
+      --cpus "$CORES" \
+      --memory "${RAM_GB}g" \
+      --memory-swap "${RAM_GB}g" \
+      -e SPARK_MODE=worker \
+      -e SPARK_MASTER_URL=spark://spark-master:7077 \
+      -e SPARK_WORKER_CORES="$CORES" \
+      -e SPARK_WORKER_MEMORY="${RAM_GB}g" \
+      "$SPARK_WORKER_IMAGE" >/dev/null
+  done
+  sleep 8
+}
+
+# ── Шаг 1: Рекомендация ───────────────────────────────────────────────────────
+
+echo "=== Шаг 1: Запрос рекомендации у ${RECOMMENDER_URL} (${MODEL_NAME}) ==="
+
+eval "$(python3 - <<PY
+import json, urllib.request, sys
+
+body = json.dumps({
+    "job_type": "pagerank",
+    "input": {"profile": "${PROFILE}"},
+    "topology": {"workers": ${WORKERS}, "worker_cores": ${CORES}, "worker_memory_gb": ${RAM_GB}},
+    "preferences": {"return_top_k": 1},
+    "model_name": "${MODEL_NAME}"
+}).encode()
+req = urllib.request.Request(
+    "${RECOMMENDER_URL}/recommend", data=body,
+    headers={"Content-Type": "application/json"}
+)
+try:
+    with urllib.request.urlopen(req, timeout=10) as r:
+        data = json.load(r)
+except Exception as e:
+    print(f"echo 'ERROR: не удалось получить рекомендацию: {e}' >&2; exit 1")
+    sys.exit(0)
+top1 = data["recommendations"][0]
+cfg  = top1["config"]
+print(f"PREDICTED_S={top1['predicted_runtime_s']}")
+print(f"SPEEDUP={top1['predicted_speedup_vs_default']}")
+print(f"CONF_BAND_LO={top1['confidence_band'][0]}")
+print(f"CONF_BAND_HI={top1['confidence_band'][1]}")
+print(f"MODEL_TYPE={data.get('model_info', {}).get('predictor_type', '${MODEL_NAME}')}")
+print(f"MODEL_MAE={data.get('model_info', {}).get('predictor_mae_s', '')}")
+print(f"MODEL_R2={data.get('model_info', {}).get('predictor_r2', '')}")
+print(f"EC={cfg['executor_cores']}")
+print(f"EM={cfg['executor_memory_mb']}m")
+print(f"EI={cfg['executor_instances']}")
+print(f"DC={cfg['driver_cores']}")
+print(f"DM={cfg['driver_memory_mb']}m")
+print(f"MF={cfg['memory_fraction']}")
+print(f"MSF={cfg['memory_storageFraction']}")
+print(f"SHC={'true' if cfg['shuffle_compress'] else 'false'}")
+print(f"SPC={'true' if cfg['spill_compress'] else 'false'}")
+print(f"SFB={cfg['shuffle_file_buffer_kb']}k")
+print(f"BBL={cfg['broadcast_block_mb']}m")
+print(f"BC={'true' if cfg['broadcast_compress'] else 'false'}")
+print(f"MIF={cfg['maxSizeInFlight_mb']}m")
+print(f"RPC={cfg['rpc_message_maxSize']}")
+print(f"RDC={'true' if cfg['rdd_compress'] else 'false'}")
+print(f"CODEC={cfg['io_codec']}")
+PY
+)"
+
+echo "    Предсказание:  ${PREDICTED_S} с  (диапазон ${CONF_BAND_LO}–${CONF_BAND_HI} с,  ускорение ×${SPEEDUP})"
+echo "    Стратегия:     ${MODEL_NAME}  predictor=${MODEL_TYPE}  MAE=${MODEL_MAE:-—}  R²=${MODEL_R2:-—}"
+echo "    executor: cores=${EC}  memory=${EM}  instances=${EI}"
+echo "    codec=${CODEC}  shuffle_compress=${SHC}  memory_fraction=${MF}"
+
+# ── Шаг 2: Воркеры ────────────────────────────────────────────────────────────
+
+echo ""
+echo "=== Шаг 2: Запуск Spark-воркеров ==="
+start_workers
+
+# ── Шаг 3: spark.conf в контейнере hibench ────────────────────────────────────
+
+echo ""
+echo "=== Шаг 3: Запись spark.conf в ${HIBENCH_CONTAINER} ==="
+
+docker exec "$HIBENCH_CONTAINER" bash -c "cat > ${SPARK_CONF_PATH} <<'EOF'
+# --- AUTOGENERATED (e2e_validate.sh) ---
+hibench.spark.master     spark://spark-master:7077
+hibench.spark.home       /opt/spark
+
+spark.executor.cores     ${EC}
+spark.executor.memory    ${EM}
+spark.executor.instances ${EI}
+
+spark.driver.cores       ${DC}
+spark.driver.memory      ${DM}
+
+spark.reducer.maxSizeInFlight    ${MIF}
+spark.shuffle.compress           ${SHC}
+spark.shuffle.spill.compress     ${SPC}
+spark.shuffle.file.buffer        ${SFB}
+spark.broadcast.blockSize        ${BBL}
+spark.broadcast.compress         ${BC}
+spark.memory.fraction            ${MF}
+spark.memory.storageFraction     ${MSF}
+spark.rpc.message.maxSize        ${RPC}
+spark.rdd.compress               ${RDC}
+spark.io.compression.codec       ${CODEC}
+
+spark.serializer         org.apache.spark.serializer.KryoSerializer
+spark.eventLog.enabled   true
+spark.eventLog.dir       /opt/spark/history
+EOF"
+
+# Устанавливаем профиль в hibench.conf
+docker exec "$HIBENCH_CONTAINER" bash -c "
+  HCONF=/opt/hibench/conf/hibench.conf
+  if grep -qE '^hibench.scale.profile' \"\$HCONF\" 2>/dev/null; then
+    sed -i 's/^hibench.scale.profile.*/hibench.scale.profile        ${PROFILE}/' \"\$HCONF\"
+  else
+    echo 'hibench.scale.profile        ${PROFILE}' >> \"\$HCONF\"
+  fi
+  grep -q '^hibench.masters.hostnames' \"\$HCONF\" 2>/dev/null || echo 'hibench.masters.hostnames    spark-master' >> \"\$HCONF\"
+  grep -q '^hibench.slaves.hostnames'  \"\$HCONF\" 2>/dev/null || echo 'hibench.slaves.hostnames     spark-master' >> \"\$HCONF\"
+"
+
+# ── Шаг 4: Разрешаем путь к PageRank workload ────────────────────────────────
+
+WORKLOAD_DIR="$(docker exec "$HIBENCH_CONTAINER" python3 -c "
+from pathlib import Path
+for c in ['/opt/hibench/bin/workloads/websearch/pagerank', '/opt/hibench/bin/workloads/graph/pagerank']:
+    if (Path(c) / 'spark' / 'run.sh').exists():
+        print(c); break
+else:
+    raise SystemExit('PageRank workload dir not found')
+")"
+echo "    workload dir: ${WORKLOAD_DIR}"
+
+# ── Шаг 5: Prepare (если входных данных нет в HDFS) ──────────────────────────
+
+echo ""
+echo "=== Шаг 4: Prepare (пропускается если данные уже в HDFS) ==="
+
+docker exec "$HIBENCH_CONTAINER" bash -c "
+  HDFS=/opt/hadoop/bin/hdfs
+  found=0
+  for path in /Pagerank/Input /HiBench/PageRank/Input /user/root/HiBench/PageRank /HiBench/pagerank/Input; do
+    if \$HDFS dfs -test -e \"\$path\" 2>/dev/null; then
+      echo '>>> Входные данные уже есть в HDFS, prepare пропускаем.'
+      found=1
+      break
+    fi
+  done
+  if [[ \$found -eq 0 ]]; then
+    echo '>>> Запускаем prepare.sh ...'
+    ${WORKLOAD_DIR}/prepare/prepare.sh
+    echo '>>> prepare.sh завершён.'
+  fi
+"
+
+# ── Шаг 6: Запуск бенчмарка ──────────────────────────────────────────────────
+
+echo ""
+echo "=== Шаг 5: HiBench PageRank (${REPEATS} повторений) ==="
+
+durations=()
+for r_idx in $(seq 1 "$REPEATS"); do
+  echo "  --- Повторение ${r_idx}/${REPEATS} ---"
+  docker exec "$HIBENCH_CONTAINER" bash -c "${WORKLOAD_DIR}/spark/run.sh" 2>&1 | tail -3
+  dur="$(docker exec "$HIBENCH_CONTAINER" bash -c "tail -n 1 ${HIBENCH_REPORT} | awk '{print \$5}'")"
+  echo "    Фактическое время: ${dur} с"
+  durations+=("$dur")
+done
+
+# ── Шаг 7: Сравнение ─────────────────────────────────────────────────────────
+
+echo ""
+echo "=== Результат E2E-валидации ==="
+
+python3 - "$PREDICTED_S" "$CONF_BAND_LO" "$CONF_BAND_HI" "${durations[@]}" <<'PY'
+import statistics, sys
+
+predicted = float(sys.argv[1])
+band_lo   = float(sys.argv[2])
+band_hi   = float(sys.argv[3])
+actuals   = [float(x) for x in sys.argv[4:] if x]
+
+if not actuals:
+    print("Нет данных о фактическом времени."); sys.exit(1)
+
+actual_mean = statistics.mean(actuals)
+actual_med  = statistics.median(actuals)
+mae         = abs(actual_mean - predicted)
+mape        = mae / actual_mean * 100
+in_band     = band_lo <= actual_mean <= band_hi
+
+print(f"  Предсказание:   {predicted:.1f} с  (диапазон {band_lo}–{band_hi} с)")
+print(f"  Факт:           {[round(a,1) for a in actuals]}  →  среднее={actual_mean:.1f} с  медиана={actual_med:.1f} с")
+print(f"  Ошибка:         |факт−прогноз| = {mae:.1f} с  (MAPE={mape:.1f}%)")
+print(f"  В диапазоне p5–p95: {'Да ✓' if in_band else 'Нет — выходит за пределы'}")
+print()
+if mape <= 20:
+    print(f"ИТОГ: прогноз точен (MAPE={mape:.1f}% ≤ 20%, целевой порог)")
+elif mape <= 40:
+    print(f"ИТОГ: приемлемая точность (MAPE={mape:.1f}%)")
+else:
+    print(f"ИТОГ: большая ошибка (MAPE={mape:.1f}%) — возможны drift входных данных или аномалия кластера")
+PY
+
+echo ""
+echo "=== Остановка воркеров ==="
+kill_workers
+echo "Готово."

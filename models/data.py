@@ -59,7 +59,7 @@ SPARK_PARAMETERS = [
 ]
 
 # Категориальные фичи - их нужно one-hot кодировать
-CATEGORICAL_FEATURES = ["profile", "io_codec"]
+CATEGORICAL_FEATURES = ["job_type", "profile", "io_codec"]
 
 # Булевы фичи - true/false конвертируем в 1/0
 BOOLEAN_FEATURES = [
@@ -82,6 +82,9 @@ NUMERIC_FEATURES = [
     "topology_workers",
     "topology_worker_cores",
     "topology_worker_mem_gb",
+    "total_cores",
+    "total_memory_gb",
+    "input_size_bytes",
     "executor_cores",
     "executor_instances",
     "driver_cores",
@@ -385,7 +388,7 @@ def create_dataset(
         "broadcast_block_mb",
         "maxSizeInFlight_mb",
     ]
-    categorical_cols = ["profile", "io_codec"]
+    categorical_cols = ["job_type", "profile", "io_codec"]
     boolean_cols = ["shuffle_compress", "spill_compress", "broadcast_compress", "rdd_compress"]
 
     # Оставляем только колонки которые есть в наших данных
@@ -408,8 +411,14 @@ def create_dataset(
     X = X[mask]
     y = y[mask]
 
-    # Стратификация - одинаковое соотношение profile в train/test/val
-    stratify = X["profile"] if "profile" in X.columns and len(X["profile"].unique()) > 1 else None
+    # Стратификация - одинаковое соотношение workload/profile в train/test/val,
+    # если данных достаточно. Для legacy WordCount CSV остается стратификация по profile.
+    stratify = None
+    stratify_cols = [c for c in ["job_type", "profile"] if c in X.columns]
+    if stratify_cols:
+        candidate = X[stratify_cols].astype(str).agg("__".join, axis=1)
+        if len(candidate.unique()) > 1 and candidate.value_counts().min() >= 2:
+            stratify = candidate
 
     # Разбиваем на train (64%) и test (20%)
     X_train, X_test, y_train, y_test = train_test_split(
@@ -417,7 +426,11 @@ def create_dataset(
     )
 
     # Разбиваем train на train (80% от 80%) и val (20% от 80% = 16%)
-    stratify_val = X_train["profile"] if stratify is not None else None
+    stratify_val = None
+    if stratify is not None:
+        val_candidate = X_train[stratify_cols].astype(str).agg("__".join, axis=1)
+        if len(val_candidate.unique()) > 1 and val_candidate.value_counts().min() >= 2:
+            stratify_val = val_candidate
     X_train, X_val, y_train, y_val = train_test_split(
         X_train, y_train, test_size=val_size, random_state=random_state, stratify=stratify_val
     )

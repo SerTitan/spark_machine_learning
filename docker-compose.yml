@@ -105,7 +105,13 @@ services:
     image: sertitanius/spark_machine_learning-hadoop:3.3.6
     container_name: nodemanager-1
     hostname: nodemanager-1
-    user: "0:0"                            # ← добавить
+    user: "0:0"
+    # init: true добавляет tini как PID 1 внутри контейнера.
+    # Без него Java-процесс NodeManager становится PID 1 и не вызывает wait()
+    # для завершившихся дочерних MapReduce-контейнеров → тысячи зомби накапливаются
+    # → NM мониторит все 20k+ PID через /proc каждые 3s → CPU-шторм даже в idle.
+    # Исправляет повышенный CV у короткоживущих задач (small profile, большие топологии).
+    init: true
     networks: [bench-net]
     depends_on:
       resourcemanager: { condition: service_healthy }
@@ -127,7 +133,8 @@ services:
     image: sertitanius/spark_machine_learning-hadoop:3.3.6
     container_name: nodemanager-2
     hostname: nodemanager-2
-    user: "0:0"                            # ← добавить
+    user: "0:0"
+    init: true  # см. комментарий nodemanager-1
     networks: [bench-net]
     depends_on:
       resourcemanager: { condition: service_healthy }
@@ -202,6 +209,7 @@ services:
     networks: [bench-net]
     volumes:
       - ./config/hadoop:/opt/hadoop/etc/hadoop:ro
+      - ./config/hibench/hibench.conf:/opt/hibench/conf/hibench.conf.template:ro
     environment:
       - HADOOP_HOME=/opt/hadoop
       - HADOOP_CONF_DIR=/opt/hadoop/etc/hadoop
@@ -214,6 +222,30 @@ services:
       retries: 20
       start_period: 15s
     restart: unless-stopped
+
+  recommender:
+    build:
+      context: .
+      dockerfile: docker/recommender/Dockerfile
+    container_name: recommender
+    networks: [bench-net]
+    ports:
+      - "8001:8000"
+    volumes:
+      # Монтируем артефакты моделей — обновление без пересборки образа
+      - ./out:/app/out
+      # В dev-режиме монтируем исходники для hot-reload:
+      # docker compose run --rm recommender uvicorn recommender.api:app --host 0.0.0.0 --port 8000 --reload
+    environment:
+      - RECOMMENDER_MODEL_DIR=/app/out/final_best
+      - RECOMMENDER_ADMIN_KEY=${RECOMMENDER_ADMIN_KEY:-spark-admin-2026}
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD-SHELL", "python3 -c \"import urllib.request; urllib.request.urlopen('http://localhost:8000/health')\""]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 15s
 
   mlflow:
     image: sertitanius/spark_machine_learning-mlflow:1.0.0

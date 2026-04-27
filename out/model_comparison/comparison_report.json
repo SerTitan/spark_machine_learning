@@ -1,0 +1,124 @@
+{
+  "pagerank": {
+    "dataset": "PageRank",
+    "n_train": 586,
+    "n_val": 147,
+    "n_test": 184,
+    "n_features": 23,
+    "models": {
+      "RF_RandomSearch": {
+        "metrics": {
+          "MAE": 8.946159008416709,
+          "RMSE": 16.49624386101769,
+          "R2": 0.8437559818412633,
+          "MAPE": 15.756848337946613
+        },
+        "best_params": {
+          "n_estimators": "200",
+          "min_samples_split": "6",
+          "min_samples_leaf": "2",
+          "max_features": null,
+          "max_depth": null
+        }
+      },
+      "DNN": {
+        "metrics": {
+          "MAE": 12.907603700741477,
+          "RMSE": 21.487156123700455,
+          "R2": 0.734911344856165,
+          "MAPE": 24.295584035349155
+        },
+        "config": {
+          "hidden": [
+            512,
+            256,
+            128
+          ],
+          "dropout": 0.25,
+          "lr": 0.0005,
+          "best_epoch": 138,
+          "best_val_rmse": 19.74685577297594
+        }
+      }
+    },
+    "optimizer": {
+      "topology": {
+        "workers": 4,
+        "worker_cores": 2,
+        "worker_memory_gb": 4
+      },
+      "profile": "large",
+      "default_time": 90.70942350382953,
+      "random_search": {
+        "best_time": 55.15346438059165,
+        "speedup": 1.6446731773344399
+      },
+      "q_learning": {
+        "best_time": 52.219571319402824,
+        "speedup": 1.7370771381672627,
+        "n_episodes": 800
+      }
+    }
+  },
+  "wordcount": {
+    "dataset": "WordCount",
+    "n_train": 256,
+    "n_val": 64,
+    "n_test": 81,
+    "n_features": 21,
+    "models": {
+      "RF_RandomSearch": {
+        "metrics": {
+          "MAE": 0.844389598765431,
+          "RMSE": 1.1980090070095515,
+          "R2": 0.9623253658444664,
+          "MAPE": 3.768140604500521
+        },
+        "best_params": {
+          "n_estimators": "300",
+          "min_samples_split": "2",
+          "min_samples_leaf": "1",
+          "max_features": null,
+          "max_depth": "15"
+        }
+      },
+      "DNN": {
+        "metrics": {
+          "MAE": 1.5182958557694046,
+          "RMSE": 2.077316367969854,
+          "R2": 0.8867249758446117,
+          "MAPE": 6.565988999030853
+        },
+        "config": {
+          "hidden": [
+            256,
+            128,
+            64
+          ],
+          "dropout": 0.2,
+          "lr": 0.0008,
+          "best_epoch": 553,
+          "best_val_rmse": 1.8085864406391556
+        }
+      }
+    },
+    "optimizer": {
+      "topology": {
+        "workers": 4,
+        "worker_cores": 2,
+        "worker_memory_gb": 4
+      },
+      "profile": "large",
+      "default_time": 34.605555000000095,
+      "random_search": {
+        "best_time": 25.730069999999962,
+        "speedup": 1.3449460106404743
+      },
+      "q_learning": {
+        "best_time": 25.60800833333328,
+        "speedup": 1.3513567533073214,
+        "n_episodes": 800
+      }
+    }
+  }
+}

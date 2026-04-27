@@ -1,0 +1,13 @@
+{
+  "dataset": "data/hibench_train_20260424_175032_clean.csv",
+  "models": {
+    "RandomForest_RandomSearch": {
+      "metrics": {
+        "MAE": 8.972216866027704,
+        "RMSE": 16.509447272836518,
+        "R2": 0.8435057697667769,
+        "MAPE": 15.778915817012788
+      }
+    }
+  }
+}

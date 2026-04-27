@@ -1,0 +1,11 @@
+{
+  "job_type": "pagerank",
+  "profile": "large",
+  "input_dataset_id": "pagerank_large_20260424_175032",
+  "hdfs_path": "/Pagerank/Input",
+  "snapshot_archive": "/home/sertitan/spark_machine_learning/scripts/../data/hdfs_inputs/pagerank/large/pagerank_large_20260424_175032_.tar.gz",
+  "input_size_bytes": 259947887,
+  "archive_size_bytes": 84748067,
+  "sha256": "b9c110af8ed2193a7fb97e88b6cac8b5dbb44689ec3c34b4849b5636bf479068",
+  "generated_at": "2026-04-26T12:42:17+00:00"
+}

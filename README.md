@@ -2,6 +2,15 @@
 
 Система автоматической оптимизации конфигурационных параметров Apache Spark на основе машинного обучения.
 
+## Текущее состояние
+
+- **Runtime API готов**: FastAPI-сервис `recommender/` с эндпоинтами `/health`, `/jobs`, `/metrics`, `/predict`, `/recommend`, `/history`, `/history/stats` и admin reload.
+- **Актуальная production-модель**: PageRank в `out/final_best/pagerank/`. Загрузчик выбирает лучшую доступную модель по `MAE` из `report.json`; сейчас это `RandomForest_RandomSearch` (MAE ≈ 8.97s, R² ≈ 0.844) на `data/hibench_train_20260424_175032_clean.csv` (917 строк).
+- **WordCount baseline**: `out/final_best/baseline/` остаётся как предыдущий эксперимент на `data/wc_train_merged.csv` (401 строка), лучшая модель RF+SA (MAE ≈ 0.746s).
+- **DNN и RL**: обучены/реализованы как исследовательские эксперименты, но не используются в runtime API.
+- **Диаграммы**: исходник `docs/diagrams/spark_recommender_diagrams.drawio`, экспорт SVG — `docs/diagrams/*.svg`.
+- **Тесты**: `79 passed`, покрытие `recommender/` ≈ 93% (`docs/TESTS.md`).
+
 ## Цель проекта
 
 Разработать рекомендательную систему, которая по заданной топологии кластера (количество воркеров, ядер, памяти) и характеристикам задачи предсказывает оптимальные значения 16 ключевых параметров Spark для минимизации времени выполнения.
@@ -18,8 +27,9 @@
 │  - Размер входных данных                                         │
 ├─────────────────────────────────────────────────────────────────┤
 │  Processing:                                                     │
-│  1. DNN Performance Predictor → предсказание времени выполнения │
-│  2. RL-based Parameter Search → поиск оптимальных параметров    │
+│  1. ModelRegistry → загрузка лучшего joblib-артефакта по MAE    │
+│  2. RandomForest Predictor → batch-предсказание времени         │
+│  3. Candidate Ranking → сортировка top-K конфигураций           │
 ├─────────────────────────────────────────────────────────────────┤
 │  Output:                                                         │
 │  - Оптимальная конфигурация Spark (16 параметров)               │
@@ -65,14 +75,29 @@ spark_machine_learning/
 │   ├── train_dnn.py                    # Обучение DNN предиктора
 │   ├── train_rl.py                     # Обучение RL оптимизаторов
 │   └── collect_agg.py                  # Агрегация CSV файлов
-├── scripts/                            # Скрипты сбора данных
-│   ├── run_wordcount_experiments.sh    # Оркестратор сбора данных
-│   ├── collect_wordcount_data.sh       # Сбор датасета внутри HiBench
-│   └── utils/                          # Вспомогательные скрипты
-├── recommender/                        # Рекомендательная система (TODO)
+├── scripts/                            # Скрипты сбора данных и валидации
+│   ├── smoke_hibench_workloads.sh      # Smoke-проверка нагрузок на VM
+│   ├── run_hibench_experiments.sh      # Host-runner по матрице workloads x profiles x topologies
+│   ├── collect_hibench_data.sh         # In-container коллектор, расширенный CSV
+│   ├── vm_preflight.sh                 # Проверка CPU/RAM/disk на новой VM
+│   ├── snapshot_hdfs_input.sh          # Архивация HDFS input в tar.gz
+│   ├── restore_hdfs_input.sh           # Восстановление HDFS input
+│   ├── monitor_collection_resources.sh # Мониторинг ресурсов во время сбора
+│   ├── e2e_validate.sh                 # E2E: рекомендация → реальный HiBench → MAPE
+│   └── test_stability.py               # Стабильность рекомендаций (CV по 16 параметрам)
+├── archive/legacy_scripts/             # Старые WordCount-only скрипты (для истории)
+├── docs/                               # План ВКР, runbook, тесты, диаграммы
+│   ├── diagrams/                       # drawio-исходник + SVG-экспорт
+│   ├── VKR_PLAN.md                     # План работ + производственная практика
+│   ├── VM_DATASET_COLLECTION_RUNBOOK.md# Инструкция по VM + сбор
+│   ├── DATASET_COLLECTION_STATUS.md    # Что сломано, что исправлено (2026-04-24)
+│   └── ...
+├── recommender/                        # Рекомендательная система
 │   ├── api.py                          # REST API (FastAPI)
 │   ├── inference.py                    # Инференс моделей
-│   └── config_generator.py             # Генерация spark.conf
+│   ├── model_registry.py               # Загрузка лучшей модели из out/final_best
+│   ├── history.py                      # SQLite-история запросов
+│   └── config_generator.py             # Генерация кандидатов Spark-конфигов
 ├── docker/                             # Docker конфиги
 │   ├── hibench/                        # HiBench образ
 │   └── mlflow/                         # MLflow образ
@@ -88,42 +113,45 @@ spark_machine_learning/
 - [x] Настройка HiBench + Spark кластера
 - [x] Скрипты сбора данных с медианой по N прогонов
 - [x] Исправление docker-compose (namenode formatting, hibench healthcheck)
-- [ ] **В процессе**: Сбор 150+ сэмплов WordCount (3 топологии × 50 сэмплов)
-- [ ] Валидация и очистка датасета
+- [x] WordCount baseline dataset: `data/wc_train_merged.csv` (401 строка)
+- [x] PageRank dataset: `data/hibench_train_20260424_175032_clean.csv` (917 строк после очистки)
+- [ ] TeraSort / KMeans / новый мульти-нагрузочный датасет
 
-### Фаза 2: Baseline модели ✅
+### Фаза 2: Baseline модели
 - [x] Модуль загрузки данных (`models/data.py`)
 - [x] DummyRegressor (median baseline)
 - [x] RandomForestRegressor + RandomizedSearchCV
 - [x] RandomForestRegressor + Simulated Annealing
 - [x] MLP (sklearn)
 - [x] Скрипт обучения с MLflow (`training/train_baseline.py`)
-- [ ] Сравнительный анализ MAE/RMSE/MAPE/R² (после получения датасета)
+- [x] Сравнительный анализ WordCount и PageRank (`docs/training.md`)
 
-### Фаза 3: DNN Performance Predictor ✅
+### Фаза 3: DNN Performance Predictor
 - [x] Архитектура: Input(n) → Dense(128) → Dense(64) → Output(1)
 - [x] Препроцессинг: OneHotEncoder + StandardScaler
 - [x] Early stopping, learning rate scheduling
 - [x] PyTorch реализация с sklearn fallback
 - [x] Скрипт обучения (`training/train_dnn.py`)
-- [ ] Обучение и оценка (после получения датасета)
+- [x] Обучение и оценка WordCount; качество хуже RF, в API не используется
 
-### Фаза 4: Reinforcement Learning Optimizer ✅
+### Фаза 4: Reinforcement Learning Optimizer
 - [x] **Q-Learning** (табличный, как в статье)
 - [x] **Deep Q-Network (DQN)** с Experience Replay
 - [x] **PPO/A2C** через stable-baselines3
 - [x] **Bayesian Optimization** через Optuna
 - [x] Скрипт оптимизации (`training/train_rl.py`)
-- [ ] Обучение и сравнение алгоритмов (после получения датасета)
+- [x] Offline-эксперименты на WordCount RF-суррогате (`out/rl_topo336*`)
+- [ ] Интеграция offline RL-агента в `/recommend`
 
 ### Фаза 5: Рекомендательная система
-- [ ] REST API (FastAPI)
+- [x] REST API (FastAPI)
 - [ ] CLI интерфейс
-- [ ] Генерация spark.conf файла
-- [ ] Web UI (опционально)
+- [x] Генерация кандидатов Spark-конфигов
+- [x] Web UI
 
 ### Фаза 6: Расширение на другие бенчмарки
-- [ ] PageRank, K-Means, TeraSort
+- [x] PageRank
+- [ ] K-Means, TeraSort
 - [ ] Multi-task learning / Transfer learning
 
 ---
@@ -317,44 +345,62 @@ pip install gymnasium stable-baselines3  # для PPO/A2C
 
 ### 1. Запуск кластера
 ```bash
-docker-compose up -d
-# Проверить статус
-docker-compose ps
+# Без аргументов поднимает все сервисы, включая nodemanager-1/2.
+# NM-ы обязательны: иначе prepare PageRank/KMeans/TeraSort висит в ACCEPTED.
+docker compose up -d
+docker compose ps
 ```
 
-### 2. Сбор датасета
+### 2. Smoke нагрузок
 ```bash
-# Запустить сбор (выполняется внутри hibench контейнера)
-docker exec -it hibench bash
-cd /opt/hibench
-./scripts/collect_wordcount_data.sh
-
-# Забрать результат
-docker cp hibench:/opt/hibench/report/wc_train_all.csv ./out/
+WORKLOADS=wordcount,pagerank,kmeans,terasort \
+PROFILES=small,large \
+REPEATS=1 \
+./scripts/smoke_hibench_workloads.sh
+# Смотрим data/smoke_hibench_workloads_<timestamp>.csv: prepare_rc=0, run_rc=0.
 ```
 
-### 3. Обучение baseline моделей
+### 3. Полный сбор датасета
 ```bash
-python training/train_baseline.py \
-    --csv ./out/wc_train_all.csv \
-    --outdir ./out/baseline \
-    --mlflow
+WORKLOADS=pagerank \
+PROFILES=small,large \
+TARGET_SAMPLES=80 \
+REPEATS=3 \
+./scripts/run_hibench_experiments.sh
+# Итог: data/hibench_train_<timestamp>.csv (+ snapshots/ на каждую ячейку).
 ```
 
-### 4. Обучение DNN предиктора
+Подробности в [`docs/DATASET_COLLECTION_STATUS.md`](docs/DATASET_COLLECTION_STATUS.md)
+и [`docs/VM_DATASET_COLLECTION_RUNBOOK.md`](docs/VM_DATASET_COLLECTION_RUNBOOK.md).
+
+### 4. Обучение baseline моделей
+```bash
+.venv/bin/python training/train_baseline.py \
+    --csv data/hibench_train_20260424_175032_clean.csv \
+    --outdir out/final_best/pagerank \
+    --rf-search-iters 200 \
+    --sa-iters 250 \
+    --mlp-hidden 64,32 \
+    --mlp-lr 0.0025 \
+    --mlp-max-iter 1400 \
+    --mlp-patience 60 \
+    --seed 42
+```
+
+### 5. Обучение DNN предиктора
 ```bash
 python training/train_dnn.py \
-    --csv ./out/wc_train_all.csv \
+    --csv ./data/hibench_train_<timestamp>.csv \
     --outdir ./out/dnn \
     --hidden-sizes 128,64 \
     --epochs 500 \
     --mlflow
 ```
 
-### 5. Запуск RL оптимизации
+### 6. Запуск RL оптимизации
 ```bash
 python training/train_rl.py \
-    --csv ./out/wc_train_all.csv \
+    --csv ./data/hibench_train_<timestamp>.csv \
     --dnn-model ./out/dnn/model \
     --outdir ./out/rl \
     --workers 4 --worker-cores 2 --worker-mem 4 \
@@ -367,11 +413,27 @@ python training/train_rl.py \
 # MLflow UI доступен по адресу http://localhost:5000
 ```
 
-### Запуск рекомендательной системы (TODO)
+### 7. Запуск рекомендательной системы
 ```bash
-python recommender/api.py --port 8080
-# POST http://localhost:8080/recommend
-# {"workers": 4, "worker_cores": 2, "worker_mem_gb": 4, "task": "wordcount", "input_gb": 10}
+docker compose up -d recommender
+# UI:   http://localhost:8001/
+# Docs: http://localhost:8001/docs
+
+curl -s localhost:8001/health | python3 -m json.tool
+```
+
+### 8. E2E-валидация (реальный Spark)
+```bash
+# Предварительно: docker compose up -d (hibench + spark-master + HDFS)
+WORKERS=4 CORES=2 RAM_GB=4 PROFILE=large bash scripts/e2e_validate.sh
+# Ожидаемый MAPE ≤ 20%
+```
+
+### 9. Стабильность рекомендаций
+```bash
+# Требует запущенного recommender на localhost:8001
+python scripts/test_stability.py --n 15 --profile large
+# Ожидаемый CV < 5%
 ```
 
 ---

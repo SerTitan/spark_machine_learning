@@ -1,0 +1,447 @@
+<mxfile host="app.diagrams.net" modified="2026-04-27T12:00:00.000Z" agent="Codex" version="22.1.16" type="device">
+  <diagram name="1_use_cases" id="diag_use_cases">
+    <mxGraphModel dx="1422" dy="800" grid="1" gridSize="10" guides="1" tooltips="1" connect="1" arrows="1" fold="1" page="1" pageScale="1" pageWidth="1169" pageHeight="826" math="0" shadow="0">
+      <root>
+        <mxCell id="0" />
+        <mxCell id="1" parent="0" />
+        <mxCell id="title_uc" value="Рисунок 1 — Диаграмма вариантов использования рекомендательного сервиса" style="text;html=1;align=center;verticalAlign=middle;fontSize=14;fontStyle=1" vertex="1" parent="1">
+          <mxGeometry x="200" y="20" width="800" height="30" as="geometry" />
+        </mxCell>
+        <mxCell id="actor_user" value="Пользователь&#10;(data engineer)" style="shape=umlActor;verticalLabelPosition=bottom;verticalAlign=top;html=1;outlineConnect=0;" vertex="1" parent="1">
+          <mxGeometry x="80" y="350" width="40" height="60" as="geometry" />
+        </mxCell>
+        <mxCell id="actor_admin" value="Администратор&#10;сервиса" style="shape=umlActor;verticalLabelPosition=bottom;verticalAlign=top;html=1;outlineConnect=0;" vertex="1" parent="1">
+          <mxGeometry x="1050" y="350" width="40" height="60" as="geometry" />
+        </mxCell>
+        <mxCell id="boundary_uc" value="Рекомендательный сервис Apache Spark" style="rounded=1;whiteSpace=wrap;html=1;fillColor=none;strokeColor=#000000;verticalAlign=top;" vertex="1" parent="1">
+          <mxGeometry x="200" y="80" width="780" height="700" as="geometry" />
+        </mxCell>
+        <mxCell id="uc1" value="Получить рекомендацию&#10;Spark-конфигурации" style="ellipse;whiteSpace=wrap;html=1;fillColor=#fff2cc;strokeColor=#d6b656;" vertex="1" parent="1">
+          <mxGeometry x="280" y="140" width="200" height="60" as="geometry" />
+        </mxCell>
+        <mxCell id="uc2" value="Предсказать время&#10;выполнения задачи" style="ellipse;whiteSpace=wrap;html=1;fillColor=#fff2cc;strokeColor=#d6b656;" vertex="1" parent="1">
+          <mxGeometry x="280" y="260" width="200" height="60" as="geometry" />
+        </mxCell>
+        <mxCell id="uc3" value="Получить список&#10;поддерживаемых нагрузок" style="ellipse;whiteSpace=wrap;html=1;fillColor=#fff2cc;strokeColor=#d6b656;" vertex="1" parent="1">
+          <mxGeometry x="280" y="380" width="200" height="60" as="geometry" />
+        </mxCell>
+        <mxCell id="uc4" value="Получить метрики&#10;качества моделей" style="ellipse;whiteSpace=wrap;html=1;fillColor=#fff2cc;strokeColor=#d6b656;" vertex="1" parent="1">
+          <mxGeometry x="280" y="500" width="200" height="60" as="geometry" />
+        </mxCell>
+        <mxCell id="uc5" value="Сгенерировать&#10;кандидатов конфигов" style="ellipse;whiteSpace=wrap;html=1;fillColor=#dae8fc;strokeColor=#6c8ebf;" vertex="1" parent="1">
+          <mxGeometry x="600" y="140" width="200" height="60" as="geometry" />
+        </mxCell>
+        <mxCell id="uc6" value="Выполнить batch-предсказание&#10;времени выполнения" style="ellipse;whiteSpace=wrap;html=1;fillColor=#dae8fc;strokeColor=#6c8ebf;" vertex="1" parent="1">
+          <mxGeometry x="600" y="220" width="200" height="60" as="geometry" />
+        </mxCell>
+        <mxCell id="uc7" value="Отранжировать top-K&#10;рекомендаций" style="ellipse;whiteSpace=wrap;html=1;fillColor=#dae8fc;strokeColor=#6c8ebf;" vertex="1" parent="1">
+          <mxGeometry x="600" y="300" width="200" height="60" as="geometry" />
+        </mxCell>
+        <mxCell id="uc8" value="Валидировать&#10;ограничения ресурсов" style="ellipse;whiteSpace=wrap;html=1;fillColor=#dae8fc;strokeColor=#6c8ebf;" vertex="1" parent="1">
+          <mxGeometry x="600" y="380" width="200" height="60" as="geometry" />
+        </mxCell>
+        <mxCell id="uc9" value="Перезагрузить модели&#10;с диска" style="ellipse;whiteSpace=wrap;html=1;fillColor=#f8cecc;strokeColor=#b85450;" vertex="1" parent="1">
+          <mxGeometry x="600" y="600" width="200" height="60" as="geometry" />
+        </mxCell>
+        <mxCell id="uc10" value="Просмотреть историю&#10;и статистику запросов" style="ellipse;whiteSpace=wrap;html=1;fillColor=#f8cecc;strokeColor=#b85450;" vertex="1" parent="1">
+          <mxGeometry x="600" y="680" width="200" height="60" as="geometry" />
+        </mxCell>
+        <mxCell id="e_user_uc1" style="endArrow=none;html=1;" edge="1" parent="1" source="actor_user" target="uc1">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="e_user_uc2" style="endArrow=none;html=1;" edge="1" parent="1" source="actor_user" target="uc2">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="e_user_uc3" style="endArrow=none;html=1;" edge="1" parent="1" source="actor_user" target="uc3">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="e_user_uc4" style="endArrow=none;html=1;" edge="1" parent="1" source="actor_user" target="uc4">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="e_admin_uc9" style="endArrow=none;html=1;" edge="1" parent="1" source="actor_admin" target="uc9">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="e_admin_uc10" style="endArrow=none;html=1;" edge="1" parent="1" source="actor_admin" target="uc10">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="e_uc1_uc5" value="&lt;&lt;include&gt;&gt;" style="endArrow=open;html=1;dashed=1;fontSize=11;" edge="1" parent="1" source="uc1" target="uc5">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="e_uc1_uc6" value="&lt;&lt;include&gt;&gt;" style="endArrow=open;html=1;dashed=1;fontSize=11;" edge="1" parent="1" source="uc1" target="uc6">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="e_uc1_uc7" value="&lt;&lt;include&gt;&gt;" style="endArrow=open;html=1;dashed=1;fontSize=11;" edge="1" parent="1" source="uc1" target="uc7">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="e_uc1_uc8" value="&lt;&lt;include&gt;&gt;" style="endArrow=open;html=1;dashed=1;fontSize=11;" edge="1" parent="1" source="uc1" target="uc8">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="e_uc2_uc6" value="&lt;&lt;include&gt;&gt;" style="endArrow=open;html=1;dashed=1;fontSize=11;" edge="1" parent="1" source="uc2" target="uc6">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+      </root>
+    </mxGraphModel>
+  </diagram>
+  <diagram name="2_components" id="diag_components">
+    <mxGraphModel dx="1422" dy="800" grid="1" gridSize="10" guides="1" tooltips="1" connect="1" arrows="1" fold="1" page="1" pageScale="1" pageWidth="1169" pageHeight="826" math="0" shadow="0">
+      <root>
+        <mxCell id="0" />
+        <mxCell id="1" parent="0" />
+        <mxCell id="title_comp" value="Рисунок 2 — Диаграмма компонентов рекомендательного сервиса" style="text;html=1;align=center;verticalAlign=middle;fontSize=14;fontStyle=1" vertex="1" parent="1">
+          <mxGeometry x="200" y="20" width="800" height="30" as="geometry" />
+        </mxCell>
+        <mxCell id="comp_client" value="Клиент&#10;(curl, Python, веб-UI)" style="shape=component;html=1;fillColor=#d5e8d4;strokeColor=#82b366;" vertex="1" parent="1">
+          <mxGeometry x="80" y="100" width="180" height="80" as="geometry" />
+        </mxCell>
+        <mxCell id="boundary_api" value="REST API сервис (FastAPI / Uvicorn)" style="rounded=1;whiteSpace=wrap;html=1;fillColor=none;strokeColor=#6c8ebf;verticalAlign=top;fontStyle=1;" vertex="1" parent="1">
+          <mxGeometry x="320" y="80" width="500" height="380" as="geometry" />
+        </mxCell>
+        <mxCell id="comp_router" value="FastAPI app / Router&#10;/recommend, /predict, /jobs, /metrics, /health&#10;/history, /admin/models" style="shape=component;html=1;fillColor=#dae8fc;strokeColor=#6c8ebf;" vertex="1" parent="1">
+          <mxGeometry x="350" y="120" width="200" height="80" as="geometry" />
+        </mxCell>
+        <mxCell id="comp_validator" value="Validator&#10;(pydantic-схемы&#10;запросов / ответов)" style="shape=component;html=1;fillColor=#dae8fc;strokeColor=#6c8ebf;" vertex="1" parent="1">
+          <mxGeometry x="600" y="120" width="180" height="80" as="geometry" />
+        </mxCell>
+        <mxCell id="comp_cfggen" value="generate_candidates()&#10;случайные Spark-конфиги&#10;с учётом топологии" style="shape=component;html=1;fillColor=#dae8fc;strokeColor=#6c8ebf;" vertex="1" parent="1">
+          <mxGeometry x="350" y="230" width="200" height="80" as="geometry" />
+        </mxCell>
+        <mxCell id="comp_predict" value="PredictorService&#10;sklearn RF&#10;predict_one / predict_batch" style="shape=component;html=1;fillColor=#dae8fc;strokeColor=#6c8ebf;" vertex="1" parent="1">
+          <mxGeometry x="600" y="230" width="180" height="80" as="geometry" />
+        </mxCell>
+        <mxCell id="comp_optim" value="Recommendation ranking&#10;sort by predicted_runtime&#10;dedupe + top-K" style="shape=component;html=1;fillColor=#dae8fc;strokeColor=#6c8ebf;" vertex="1" parent="1">
+          <mxGeometry x="350" y="340" width="200" height="80" as="geometry" />
+        </mxCell>
+        <mxCell id="comp_logger" value="SQLite history&#10;requests table&#10;история и статистика" style="shape=component;html=1;fillColor=#dae8fc;strokeColor=#6c8ebf;" vertex="1" parent="1">
+          <mxGeometry x="600" y="340" width="180" height="80" as="geometry" />
+        </mxCell>
+        <mxCell id="comp_mlflow" value="MLflow&#10;логирование обучения&#10;(не runtime dependency)" style="shape=component;html=1;fillColor=#fff2cc;strokeColor=#d6b656;" vertex="1" parent="1">
+          <mxGeometry x="880" y="120" width="200" height="80" as="geometry" />
+        </mxCell>
+        <mxCell id="comp_storage" value="out/final_best/&lt;job_type&gt;&#10;model_*.joblib, preprocessor.joblib, report.json" style="shape=component;html=1;fillColor=#fff2cc;strokeColor=#d6b656;" vertex="1" parent="1">
+          <mxGeometry x="880" y="230" width="200" height="80" as="geometry" />
+        </mxCell>
+        <mxCell id="comp_dataset" value="Датасеты&#10;PageRank clean: 917 строк&#10;WordCount: 401 строка" style="shape=component;html=1;fillColor=#fff2cc;strokeColor=#d6b656;" vertex="1" parent="1">
+          <mxGeometry x="880" y="340" width="200" height="80" as="geometry" />
+        </mxCell>
+        <mxCell id="comp_spark" value="Apache Spark + HiBench&#10;(валидация рекомендаций)" style="shape=component;html=1;fillColor=#f8cecc;strokeColor=#b85450;" vertex="1" parent="1">
+          <mxGeometry x="500" y="500" width="240" height="80" as="geometry" />
+        </mxCell>
+        <mxCell id="comp_docker" value="Docker / docker-compose&#10;(deploy сервиса и Spark-кластера)" style="shape=component;html=1;fillColor=#f8cecc;strokeColor=#b85450;" vertex="1" parent="1">
+          <mxGeometry x="80" y="500" width="280" height="80" as="geometry" />
+        </mxCell>
+        <mxCell id="e_client_router" value="HTTP / JSON" style="endArrow=classic;html=1;fontSize=11;" edge="1" parent="1" source="comp_client" target="comp_router">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="e_router_validator" style="endArrow=classic;html=1;" edge="1" parent="1" source="comp_router" target="comp_validator">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="e_router_cfggen" style="endArrow=classic;html=1;" edge="1" parent="1" source="comp_router" target="comp_cfggen">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="e_router_optim" style="endArrow=classic;html=1;" edge="1" parent="1" source="comp_router" target="comp_optim">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="e_optim_predict" value="predict_batch(candidates)" style="endArrow=classic;html=1;fontSize=10;" edge="1" parent="1" source="comp_optim" target="comp_predict">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="e_router_logger" style="endArrow=classic;html=1;" edge="1" parent="1" source="comp_router" target="comp_logger">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="e_predict_storage" style="endArrow=classic;html=1;dashed=1;" edge="1" parent="1" source="comp_predict" target="comp_storage">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="e_storage_dataset" style="endArrow=classic;html=1;dashed=1;" edge="1" parent="1" source="comp_storage" target="comp_dataset">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="e_optim_spark" value="e2e validation" style="endArrow=classic;html=1;fontSize=10;dashed=1;" edge="1" parent="1" source="comp_spark" target="comp_router">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="e_docker_router" style="endArrow=classic;html=1;dashed=1;" edge="1" parent="1" source="comp_docker" target="comp_router">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+      </root>
+    </mxGraphModel>
+  </diagram>
+  <diagram name="3_classes" id="diag_classes">
+    <mxGraphModel dx="1422" dy="800" grid="1" gridSize="10" guides="1" tooltips="1" connect="1" arrows="1" fold="1" page="1" pageScale="1" pageWidth="1400" pageHeight="900" math="0" shadow="0">
+      <root>
+        <mxCell id="0" />
+        <mxCell id="1" parent="0" />
+        <mxCell id="title_cls" value="Рисунок 3 — Диаграмма классов рекомендательного сервиса" style="text;html=1;align=center;verticalAlign=middle;fontSize=14;fontStyle=1" vertex="1" parent="1">
+          <mxGeometry x="200" y="20" width="900" height="30" as="geometry" />
+        </mxCell>
+        <mxCell id="cls_request" value="RecommendRequest" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#dae8fc;strokeColor=#6c8ebf;verticalAlign=top;fontStyle=1;" vertex="1" parent="1">
+          <mxGeometry x="60" y="80" width="240" height="160" as="geometry" />
+        </mxCell>
+        <mxCell id="cls_request_attrs" value="+ job_type: str&#10;+ input: InputSpec&#10;+ topology: TopologySpec&#10;+ constraints: ConstraintsSpec | None&#10;+ preferences: PreferencesSpec | None" style="text;html=1;align=left;verticalAlign=top;fontSize=11;" vertex="1" parent="1">
+          <mxGeometry x="60" y="110" width="240" height="130" as="geometry" />
+        </mxCell>
+        <mxCell id="cls_response" value="RecommendResponse" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#dae8fc;strokeColor=#6c8ebf;verticalAlign=top;fontStyle=1;" vertex="1" parent="1">
+          <mxGeometry x="1080" y="80" width="240" height="160" as="geometry" />
+        </mxCell>
+        <mxCell id="cls_response_attrs" value="+ recommendations: list[RecommendationItem]&#10;+ model_info: ModelInfo" style="text;html=1;align=left;verticalAlign=top;fontSize=11;" vertex="1" parent="1">
+          <mxGeometry x="1080" y="110" width="240" height="130" as="geometry" />
+        </mxCell>
+        <mxCell id="cls_router" value="APIRouter" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#fff2cc;strokeColor=#d6b656;verticalAlign=top;fontStyle=1;" vertex="1" parent="1">
+          <mxGeometry x="380" y="80" width="280" height="160" as="geometry" />
+        </mxCell>
+        <mxCell id="cls_router_attrs" value="- registry: ModelRegistry&#10;- services: dict[str, PredictorService]&#10;&#10;+ recommend(req) : RecommendResponse&#10;+ predict(req) : PredictResponse&#10;+ jobs() : dict&#10;+ metrics() : MetricsResponse&#10;+ history() : dict" style="text;html=1;align=left;verticalAlign=top;fontSize=11;" vertex="1" parent="1">
+          <mxGeometry x="380" y="110" width="280" height="130" as="geometry" />
+        </mxCell>
+        <mxCell id="cls_cfggen" value="config_generator.py" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#d5e8d4;strokeColor=#82b366;verticalAlign=top;fontStyle=1;" vertex="1" parent="1">
+          <mxGeometry x="60" y="320" width="280" height="180" as="geometry" />
+        </mxCell>
+        <mxCell id="cls_cfggen_attrs" value="+ generate_candidates(topology, profile, n, constraints)&#10;  : list[dict]&#10;- clamps executor cores / memory / instances&#10;- fills 16 Spark parameters" style="text;html=1;align=left;verticalAlign=top;fontSize=11;" vertex="1" parent="1">
+          <mxGeometry x="60" y="350" width="280" height="150" as="geometry" />
+        </mxCell>
+        <mxCell id="cls_predict" value="PredictorService" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#d5e8d4;strokeColor=#82b366;verticalAlign=top;fontStyle=1;" vertex="1" parent="1">
+          <mxGeometry x="380" y="320" width="280" height="180" as="geometry" />
+        </mxCell>
+        <mxCell id="cls_predict_attrs" value="- model: sklearn estimator&#10;- preprocessor: ColumnTransformer&#10;- feature_cols: list[str]&#10;&#10;+ predict_one(row) : (pred, p5, p95)&#10;+ predict_batch(rows) : (preds, lows, highs)&#10;+ default_runtime(topology, profile) : float" style="text;html=1;align=left;verticalAlign=top;fontSize=11;" vertex="1" parent="1">
+          <mxGeometry x="380" y="350" width="280" height="150" as="geometry" />
+        </mxCell>
+        <mxCell id="cls_optim" value="RecommendationRanker" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#d5e8d4;strokeColor=#82b366;verticalAlign=top;fontStyle=1;" vertex="1" parent="1">
+          <mxGeometry x="700" y="320" width="280" height="180" as="geometry" />
+        </mxCell>
+        <mxCell id="cls_optim_attrs" value="+ _rank_candidates(candidates, preds, lows, highs, default_time, top_k)&#10;  : list[RecommendationItem]&#10;- dedupe by executor cores/memory/instances&#10;- speedup vs default" style="text;html=1;align=left;verticalAlign=top;fontSize=11;" vertex="1" parent="1">
+          <mxGeometry x="700" y="350" width="280" height="150" as="geometry" />
+        </mxCell>
+        <mxCell id="cls_baseopt" value="«abstract» BaseOptimizer" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#f5f5f5;strokeColor=#666666;verticalAlign=top;fontStyle=1;" vertex="1" parent="1">
+          <mxGeometry x="1020" y="320" width="280" height="180" as="geometry" />
+        </mxCell>
+        <mxCell id="cls_baseopt_attrs" value="# param_grid: Dict[str, List]&#10;# predictor: Callable&#10;&#10;+ optimize(topo, profile) : Result&#10;# _predict_time(cfg) : float&#10;# _snap_to_grid(cfg) : Dict" style="text;html=1;align=left;verticalAlign=top;fontSize=11;fontStyle=2;" vertex="1" parent="1">
+          <mxGeometry x="1020" y="350" width="280" height="150" as="geometry" />
+        </mxCell>
+        <mxCell id="cls_qlearn" value="TabularQLearning" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#e1d5e7;strokeColor=#9673a6;verticalAlign=top;fontStyle=1;" vertex="1" parent="1">
+          <mxGeometry x="700" y="580" width="180" height="100" as="geometry" />
+        </mxCell>
+        <mxCell id="cls_qlearn_attrs" value="- Q: Dict[state, ndarray]&#10;- alpha, gamma, eps: float&#10;&#10;+ optimize(...)" style="text;html=1;align=left;verticalAlign=top;fontSize=10;" vertex="1" parent="1">
+          <mxGeometry x="700" y="610" width="180" height="70" as="geometry" />
+        </mxCell>
+        <mxCell id="cls_dqn" value="DQNOptimizer" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#e1d5e7;strokeColor=#9673a6;verticalAlign=top;fontStyle=1;" vertex="1" parent="1">
+          <mxGeometry x="900" y="580" width="180" height="100" as="geometry" />
+        </mxCell>
+        <mxCell id="cls_dqn_attrs" value="- q_net: NN&#10;- target_net: NN&#10;- replay_buffer: deque&#10;&#10;+ optimize(...)" style="text;html=1;align=left;verticalAlign=top;fontSize=10;" vertex="1" parent="1">
+          <mxGeometry x="900" y="610" width="180" height="70" as="geometry" />
+        </mxCell>
+        <mxCell id="cls_ppo" value="StableBaselinesOptimizer" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#e1d5e7;strokeColor=#9673a6;verticalAlign=top;fontStyle=1;" vertex="1" parent="1">
+          <mxGeometry x="1100" y="580" width="200" height="100" as="geometry" />
+        </mxCell>
+        <mxCell id="cls_ppo_attrs" value="- algorithm: str (&quot;PPO&quot;|&quot;A2C&quot;)&#10;- env: gym.Env&#10;&#10;+ optimize(...)" style="text;html=1;align=left;verticalAlign=top;fontSize=10;" vertex="1" parent="1">
+          <mxGeometry x="1100" y="610" width="200" height="70" as="geometry" />
+        </mxCell>
+        <mxCell id="cls_bayes" value="BayesianOptimizer" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#e1d5e7;strokeColor=#9673a6;verticalAlign=top;fontStyle=1;" vertex="1" parent="1">
+          <mxGeometry x="1300" y="580" width="180" height="100" as="geometry" />
+        </mxCell>
+        <mxCell id="cls_bayes_attrs" value="- study: optuna.Study&#10;- sampler: TPESampler&#10;&#10;+ optimize(...)" style="text;html=1;align=left;verticalAlign=top;fontSize=10;" vertex="1" parent="1">
+          <mxGeometry x="1300" y="610" width="180" height="70" as="geometry" />
+        </mxCell>
+        <mxCell id="e_req_router" value="" style="endArrow=open;html=1;endFill=0;" edge="1" parent="1" source="cls_request" target="cls_router">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="e_router_resp" value="" style="endArrow=open;html=1;endFill=0;" edge="1" parent="1" source="cls_router" target="cls_response">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="e_router_cfggen2" value="" style="endArrow=diamondThin;startArrow=none;endFill=0;html=1;" edge="1" parent="1" source="cls_router" target="cls_cfggen">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="e_router_predict2" value="" style="endArrow=diamondThin;startArrow=none;endFill=0;html=1;" edge="1" parent="1" source="cls_router" target="cls_predict">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="e_router_optim2" value="" style="endArrow=diamondThin;startArrow=none;endFill=0;html=1;" edge="1" parent="1" source="cls_router" target="cls_optim">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="e_optim_baseopt" value="" style="endArrow=diamondThin;startArrow=none;endFill=0;html=1;" edge="1" parent="1" source="cls_optim" target="cls_baseopt">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="e_qlearn_base" value="" style="endArrow=block;endFill=0;html=1;" edge="1" parent="1" source="cls_qlearn" target="cls_baseopt">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="e_dqn_base" value="" style="endArrow=block;endFill=0;html=1;" edge="1" parent="1" source="cls_dqn" target="cls_baseopt">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="e_ppo_base" value="" style="endArrow=block;endFill=0;html=1;" edge="1" parent="1" source="cls_ppo" target="cls_baseopt">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="e_bayes_base" value="" style="endArrow=block;endFill=0;html=1;" edge="1" parent="1" source="cls_bayes" target="cls_baseopt">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+      </root>
+    </mxGraphModel>
+  </diagram>
+  <diagram name="4_sequence_recommend" id="diag_seq_rec">
+    <mxGraphModel dx="1422" dy="800" grid="1" gridSize="10" guides="1" tooltips="1" connect="1" arrows="1" fold="1" page="1" pageScale="1" pageWidth="1400" pageHeight="900" math="0" shadow="0">
+      <root>
+        <mxCell id="0" />
+        <mxCell id="1" parent="0" />
+        <mxCell id="title_seq" value="Рисунок 4 — Диаграмма последовательности обработки запроса /recommend" style="text;html=1;align=center;verticalAlign=middle;fontSize=14;fontStyle=1" vertex="1" parent="1">
+          <mxGeometry x="200" y="20" width="900" height="30" as="geometry" />
+        </mxCell>
+        <mxCell id="lifeline_user" value="Пользователь" style="shape=umlLifeline;perimeter=lifelinePerimeter;whiteSpace=wrap;html=1;container=1;collapsible=0;recursiveResize=0;outlineConnect=0;" vertex="1" parent="1">
+          <mxGeometry x="80" y="80" width="120" height="700" as="geometry" />
+        </mxCell>
+        <mxCell id="lifeline_router" value="APIRouter" style="shape=umlLifeline;perimeter=lifelinePerimeter;whiteSpace=wrap;html=1;container=1;collapsible=0;recursiveResize=0;outlineConnect=0;fillColor=#dae8fc;" vertex="1" parent="1">
+          <mxGeometry x="260" y="80" width="120" height="700" as="geometry" />
+        </mxCell>
+        <mxCell id="lifeline_validator" value="Validator" style="shape=umlLifeline;perimeter=lifelinePerimeter;whiteSpace=wrap;html=1;container=1;collapsible=0;recursiveResize=0;outlineConnect=0;fillColor=#dae8fc;" vertex="1" parent="1">
+          <mxGeometry x="430" y="80" width="120" height="700" as="geometry" />
+        </mxCell>
+        <mxCell id="lifeline_cfggen" value="ConfigGenerator" style="shape=umlLifeline;perimeter=lifelinePerimeter;whiteSpace=wrap;html=1;container=1;collapsible=0;recursiveResize=0;outlineConnect=0;fillColor=#d5e8d4;" vertex="1" parent="1">
+          <mxGeometry x="600" y="80" width="140" height="700" as="geometry" />
+        </mxCell>
+        <mxCell id="lifeline_optim" value="OptimizerService" style="shape=umlLifeline;perimeter=lifelinePerimeter;whiteSpace=wrap;html=1;container=1;collapsible=0;recursiveResize=0;outlineConnect=0;fillColor=#d5e8d4;" vertex="1" parent="1">
+          <mxGeometry x="790" y="80" width="140" height="700" as="geometry" />
+        </mxCell>
+        <mxCell id="lifeline_predict" value="PredictorService" style="shape=umlLifeline;perimeter=lifelinePerimeter;whiteSpace=wrap;html=1;container=1;collapsible=0;recursiveResize=0;outlineConnect=0;fillColor=#d5e8d4;" vertex="1" parent="1">
+          <mxGeometry x="980" y="80" width="140" height="700" as="geometry" />
+        </mxCell>
+        <mxCell id="lifeline_log" value="Logger" style="shape=umlLifeline;perimeter=lifelinePerimeter;whiteSpace=wrap;html=1;container=1;collapsible=0;recursiveResize=0;outlineConnect=0;fillColor=#dae8fc;" vertex="1" parent="1">
+          <mxGeometry x="1170" y="80" width="120" height="700" as="geometry" />
+        </mxCell>
+        <mxCell id="msg1" value="1: POST /recommend (job_type, input, topology, constraints)" style="endArrow=classic;html=1;exitX=1;exitY=0.5;exitDx=0;exitDy=0;entryX=0;entryY=0.5;entryDx=0;entryDy=0;fontSize=11;" edge="1" parent="1">
+          <mxGeometry relative="1" as="geometry">
+            <mxPoint x="200" y="160" as="sourcePoint" />
+            <mxPoint x="320" y="160" as="targetPoint" />
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="msg2" value="2: validate(req)" style="endArrow=classic;html=1;fontSize=11;" edge="1" parent="1">
+          <mxGeometry relative="1" as="geometry">
+            <mxPoint x="320" y="200" as="sourcePoint" />
+            <mxPoint x="490" y="200" as="targetPoint" />
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="msg3" value="3: valid / 422 ValidationError" style="endArrow=classic;html=1;dashed=1;fontSize=11;" edge="1" parent="1">
+          <mxGeometry relative="1" as="geometry">
+            <mxPoint x="490" y="230" as="sourcePoint" />
+            <mxPoint x="320" y="230" as="targetPoint" />
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="msg4" value="4: generate_candidates(topology, profile, constraints, n=200)" style="endArrow=classic;html=1;fontSize=11;" edge="1" parent="1">
+          <mxGeometry relative="1" as="geometry">
+            <mxPoint x="320" y="280" as="sourcePoint" />
+            <mxPoint x="670" y="280" as="targetPoint" />
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="msg5" value="5: List[SparkConfig]" style="endArrow=classic;html=1;dashed=1;fontSize=11;" edge="1" parent="1">
+          <mxGeometry relative="1" as="geometry">
+            <mxPoint x="670" y="310" as="sourcePoint" />
+            <mxPoint x="320" y="310" as="targetPoint" />
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="msg6" value="6: rank candidates by predicted runtime" style="endArrow=classic;html=1;fontSize=11;" edge="1" parent="1">
+          <mxGeometry relative="1" as="geometry">
+            <mxPoint x="320" y="360" as="sourcePoint" />
+            <mxPoint x="860" y="360" as="targetPoint" />
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="loop_box" value="batch&#10;[200 кандидатов одним вызовом]" style="rounded=0;whiteSpace=wrap;html=1;fillColor=none;strokeColor=#000000;verticalAlign=top;align=left;" vertex="1" parent="1">
+          <mxGeometry x="800" y="390" width="380" height="120" as="geometry" />
+        </mxCell>
+        <mxCell id="msg7" value="7: predict_batch(candidates_df)" style="endArrow=classic;html=1;fontSize=11;" edge="1" parent="1">
+          <mxGeometry relative="1" as="geometry">
+            <mxPoint x="860" y="430" as="sourcePoint" />
+            <mxPoint x="1050" y="430" as="targetPoint" />
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="msg8" value="8: preds, p5, p95 arrays" style="endArrow=classic;html=1;dashed=1;fontSize=11;" edge="1" parent="1">
+          <mxGeometry relative="1" as="geometry">
+            <mxPoint x="1050" y="470" as="sourcePoint" />
+            <mxPoint x="860" y="470" as="targetPoint" />
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="msg9" value="9: top-K recommendations" style="endArrow=classic;html=1;dashed=1;fontSize=11;" edge="1" parent="1">
+          <mxGeometry relative="1" as="geometry">
+            <mxPoint x="860" y="540" as="sourcePoint" />
+            <mxPoint x="320" y="540" as="targetPoint" />
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="msg10" value="10: log(req, resp, elapsed_ms)" style="endArrow=classic;html=1;fontSize=11;" edge="1" parent="1">
+          <mxGeometry relative="1" as="geometry">
+            <mxPoint x="320" y="590" as="sourcePoint" />
+            <mxPoint x="1230" y="590" as="targetPoint" />
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="msg11" value="11: 200 OK + RecommendResponse" style="endArrow=classic;html=1;dashed=1;fontSize=11;" edge="1" parent="1">
+          <mxGeometry relative="1" as="geometry">
+            <mxPoint x="320" y="640" as="sourcePoint" />
+            <mxPoint x="200" y="640" as="targetPoint" />
+          </mxGeometry>
+        </mxCell>
+      </root>
+    </mxGraphModel>
+  </diagram>
+  <diagram name="5_data_flow" id="diag_data_flow">
+    <mxGraphModel dx="1422" dy="800" grid="1" gridSize="10" guides="1" tooltips="1" connect="1" arrows="1" fold="1" page="1" pageScale="1" pageWidth="1400" pageHeight="900" math="0" shadow="0">
+      <root>
+        <mxCell id="0" />
+        <mxCell id="1" parent="0" />
+        <mxCell id="title_df" value="Рисунок 5 — Диаграмма потока данных: от сбора датасета до рекомендации" style="text;html=1;align=center;verticalAlign=middle;fontSize=14;fontStyle=1" vertex="1" parent="1">
+          <mxGeometry x="200" y="20" width="900" height="30" as="geometry" />
+        </mxCell>
+        <mxCell id="df_vm" value="Yandex Cloud VM&#10;(64 vCPU, 128 GB RAM, 600 GB SSD)" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#fff2cc;strokeColor=#d6b656;" vertex="1" parent="1">
+          <mxGeometry x="80" y="100" width="280" height="80" as="geometry" />
+        </mxCell>
+        <mxCell id="df_compose" value="docker-compose:&#10;namenode + datanode +&#10;resourcemanager + 2× nodemanager +&#10;spark-master + hibench + mlflow" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#dae8fc;strokeColor=#6c8ebf;" vertex="1" parent="1">
+          <mxGeometry x="80" y="220" width="280" height="100" as="geometry" />
+        </mxCell>
+        <mxCell id="df_runner" value="run_hibench_experiments.sh&#10;(host) — PageRank матрица&#10;6 топологий × 2 профиля × 80 конфигов" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#dae8fc;strokeColor=#6c8ebf;" vertex="1" parent="1">
+          <mxGeometry x="80" y="360" width="280" height="100" as="geometry" />
+        </mxCell>
+        <mxCell id="df_collector" value="collect_hibench_data.sh&#10;(in-container) — генерация LHS-конфигов,&#10;запуск Spark, сбор метрик, REPEATS=3,&#10;медиана + cv_duration" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#dae8fc;strokeColor=#6c8ebf;" vertex="1" parent="1">
+          <mxGeometry x="80" y="500" width="280" height="100" as="geometry" />
+        </mxCell>
+        <mxCell id="df_csv" value="data/hibench_train_20260424_175032_clean.csv&#10;PageRank clean: 917 строк&#10;data/wc_train_merged.csv: 401 строка" style="shape=note;whiteSpace=wrap;html=1;fillColor=#f5f5f5;strokeColor=#666666;" vertex="1" parent="1">
+          <mxGeometry x="450" y="500" width="220" height="100" as="geometry" />
+        </mxCell>
+        <mxCell id="df_preproc" value="models/data.py&#10;preprocess: parse_memory,&#10;StandardScaler, OneHotEncoder,&#10;log1p(target)" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#d5e8d4;strokeColor=#82b366;" vertex="1" parent="1">
+          <mxGeometry x="450" y="360" width="220" height="100" as="geometry" />
+        </mxCell>
+        <mxCell id="df_train" value="training/train_baseline.py&#10;train_dnn.py, train_rl.py&#10;+ MLflow tracking" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#d5e8d4;strokeColor=#82b366;" vertex="1" parent="1">
+          <mxGeometry x="450" y="220" width="220" height="100" as="geometry" />
+        </mxCell>
+        <mxCell id="df_models" value="out/final_best/pagerank&#10;актуальная модель:&#10;RandomForest_RandomSearch&#10;MAE=8.97s, R²=0.844" style="shape=note;whiteSpace=wrap;html=1;fillColor=#f5f5f5;strokeColor=#666666;" vertex="1" parent="1">
+          <mxGeometry x="760" y="220" width="220" height="100" as="geometry" />
+        </mxCell>
+        <mxCell id="df_api" value="REST API (FastAPI)&#10;/recommend, /predict, /metrics" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#f8cecc;strokeColor=#b85450;" vertex="1" parent="1">
+          <mxGeometry x="760" y="360" width="220" height="100" as="geometry" />
+        </mxCell>
+        <mxCell id="df_client" value="Конечный пользователь&#10;(curl / Python / веб-UI)" style="shape=umlActor;verticalLabelPosition=bottom;verticalAlign=top;html=1;outlineConnect=0;" vertex="1" parent="1">
+          <mxGeometry x="1080" y="380" width="40" height="60" as="geometry" />
+        </mxCell>
+        <mxCell id="df_validation" value="Валидация predicted vs actual&#10;на реальном Spark-кластере&#10;(scripts + integration tests)" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#f8cecc;strokeColor=#b85450;" vertex="1" parent="1">
+          <mxGeometry x="760" y="500" width="220" height="100" as="geometry" />
+        </mxCell>
+        <mxCell id="ed_vm_compose" style="endArrow=classic;html=1;" edge="1" parent="1" source="df_vm" target="df_compose">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="ed_compose_runner" style="endArrow=classic;html=1;" edge="1" parent="1" source="df_compose" target="df_runner">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="ed_runner_coll" style="endArrow=classic;html=1;" edge="1" parent="1" source="df_runner" target="df_collector">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="ed_coll_csv" style="endArrow=classic;html=1;" edge="1" parent="1" source="df_collector" target="df_csv">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="ed_csv_pre" style="endArrow=classic;html=1;" edge="1" parent="1" source="df_csv" target="df_preproc">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="ed_pre_train" style="endArrow=classic;html=1;" edge="1" parent="1" source="df_preproc" target="df_train">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="ed_train_models" style="endArrow=classic;html=1;" edge="1" parent="1" source="df_train" target="df_models">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="ed_models_api" style="endArrow=classic;html=1;" edge="1" parent="1" source="df_models" target="df_api">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="ed_api_client" style="endArrow=classic;html=1;" edge="1" parent="1" source="df_api" target="df_client">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="ed_api_val" value="e2e test" style="endArrow=classic;html=1;dashed=1;" edge="1" parent="1" source="df_validation" target="df_api">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+      </root>
+    </mxGraphModel>
+  </diagram>
+</mxfile>

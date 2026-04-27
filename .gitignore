@@ -1,14 +1,19 @@
 # Python
 .venv/
+.codex
+.codex/
 __pycache__/
 *.pyc
 *.pyo
 .pytest_cache/
+.coverage
+coverage.json
 
 # Data (большие файлы, собираются локально)
 data/snapshots/
 data/wc_train_all.csv
 data/hibench.report
+data/recommender_history.db
 
 # Models (генерируются при обучении)
 models/rf_baseline/*.joblib

@@ -1,0 +1,85 @@
+{
+  "task": "hibench_train_20260424_175032_clean",
+  "dataset": "data/hibench_train_20260424_175032_clean.csv",
+  "n_train": 586,
+  "n_val": 147,
+  "n_test": 184,
+  "n_features": 23,
+  "models": {
+    "LinearRegression": {
+      "metrics": {
+        "MAE": 14.200971168005097,
+        "RMSE": 21.31166232978791,
+        "R2": 0.7392238219925982,
+        "MAPE": 47.31026850026849
+      },
+      "best_params": null
+    },
+    "SVR": {
+      "metrics": {
+        "MAE": 14.573895967929912,
+        "RMSE": 26.30145922034016,
+        "R2": 0.602814897050417,
+        "MAPE": 36.15229890550488
+      },
+      "best_params": null
+    },
+    "DecisionTree": {
+      "metrics": {
+        "MAE": 10.582771791704673,
+        "RMSE": 19.254831579646247,
+        "R2": 0.7871308570707887,
+        "MAPE": 19.069939286881425
+      },
+      "best_params": null
+    },
+    "ExtraTrees": {
+      "metrics": {
+        "MAE": 9.181535271739131,
+        "RMSE": 16.57607842929341,
+        "R2": 0.8422400176751975,
+        "MAPE": 16.59818004863541
+      },
+      "best_params": null
+    },
+    "RandomForest_RandomSearch": {
+      "metrics": {
+        "MAE": 8.972216866027702,
+        "RMSE": 16.509447272836518,
+        "R2": 0.8435057697667769,
+        "MAPE": 15.778915817012788
+      },
+      "best_params": {
+        "n_estimators": 360,
+        "min_samples_split": 5,
+        "min_samples_leaf": 2,
+        "max_features": null,
+        "max_depth": 19
+      }
+    },
+    "RandomForest_SimulatedAnnealing": {
+      "metrics": {
+        "MAE": 8.980194354129933,
+        "RMSE": 16.529781852447364,
+        "R2": 0.8431200264883226,
+        "MAPE": 16.0463357238105
+      },
+      "best_params": {
+        "n_estimators": 243,
+        "max_depth": 20,
+        "min_samples_split": 6,
+        "min_samples_leaf": 1,
+        "max_features": null
+      }
+    },
+    "MLP": {
+      "metrics": {
+        "MAE": 12.504515955057682,
+        "RMSE": 19.014661332636294,
+        "R2": 0.7924080767767775,
+        "MAPE": 33.48552439632938
+      },
+      "best_params": null
+    }
+  }
+}

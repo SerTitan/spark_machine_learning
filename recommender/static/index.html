@@ -1,0 +1,952 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Spark Config Recommender</title>
+  <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'><rect width='32' height='32' rx='6' fill='%230891b2'/><polyline points='4,24 10,14 16,18 22,8 28,12' stroke='white' stroke-width='2.5' fill='none' stroke-linecap='round' stroke-linejoin='round'/></svg>">
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+    :root {
+      --accent:    #0891b2;
+      --accent-h:  #0e7490;
+      --accent-l:  #22d3ee;
+      --admin:     #7c3aed;
+      --admin-h:   #6d28d9;
+      --bg:        #0f1117;
+      --panel:     #1a2236;
+      --card:      #1e293b;
+      --border:    #2d3f5a;
+      --muted:     #64748b;
+      --text:      #e2e8f0;
+      --text-dim:  #94a3b8;
+    }
+
+    html, body { height: 100%; overflow: hidden; }
+    body { font-family: 'Segoe UI', system-ui, sans-serif; background: var(--bg); color: var(--text); display: flex; flex-direction: column; }
+
+    header {
+      background: linear-gradient(135deg, #1a2236 0%, #0f1117 100%);
+      border-bottom: 1px solid var(--border);
+      padding: 0.75rem 1.5rem;
+      display: flex; align-items: center; gap: 0.75rem;
+    }
+    header h1 { font-size: 1.1rem; font-weight: 600; color: #f1f5f9; flex: 1; }
+    header .badge { font-size: 0.65rem; background: var(--accent); color: #fff; padding: 0.15rem 0.45rem; border-radius: 9999px; font-weight: 700; }
+    .admin-btn {
+      display: flex; align-items: center; gap: 0.4rem;
+      background: transparent; border: 1px solid var(--border);
+      border-radius: 6px; padding: 0.35rem 0.75rem;
+      font-size: 0.78rem; color: var(--text-dim); cursor: pointer;
+      transition: all 0.15s;
+    }
+    .admin-btn:hover { border-color: var(--admin); color: #c4b5fd; }
+    .admin-btn.active { background: var(--admin); border-color: var(--admin); color: #fff; }
+
+    /* ── ТАБЫ ── */
+    .tabs { display: flex; gap: 0; border-bottom: 1px solid var(--border); background: var(--panel); }
+    .tab {
+      padding: 0.65rem 1.25rem; font-size: 0.82rem; cursor: pointer;
+      color: var(--muted); border-bottom: 2px solid transparent;
+      transition: all 0.15s; user-select: none;
+    }
+    .tab:hover { color: var(--text-dim); }
+    .tab.active { color: var(--accent-l); border-bottom-color: var(--accent); }
+    .tab.admin-tab { color: #a78bfa; }
+    .tab.admin-tab.active { color: #c4b5fd; border-bottom-color: var(--admin); }
+
+    .layout {
+      display: grid; grid-template-columns: 360px 1fr;
+      flex: 1; overflow: hidden; min-height: 0;
+    }
+
+    .panel {
+      background: var(--panel); border-right: 1px solid var(--border);
+      overflow-y: auto; padding: 1.25rem; min-height: 0;
+      display: flex; flex-direction: column; gap: 1rem;
+    }
+    .panel-empty { color: var(--muted); font-size: 0.78rem; line-height: 1.45; }
+    .results { overflow-y: auto; padding: 1.25rem; display: flex; flex-direction: column; gap: 0.85rem; min-height: 0; }
+
+    /* ── ФОРМА ── */
+    .section-title { font-size: 0.65rem; font-weight: 700; letter-spacing: 0.08em; text-transform: uppercase; color: var(--muted); margin-bottom: 0.4rem; }
+    .field { display: flex; flex-direction: column; gap: 0.28rem; }
+    .field label, .field-lbl { font-size: 0.78rem; color: var(--text-dim); }
+    select, input[type="number"], input[type="file"] {
+      background: #0f172a; border: 1px solid var(--border); border-radius: 6px;
+      color: var(--text); padding: 0.45rem 0.7rem; font-size: 0.85rem; width: 100%;
+      transition: border-color 0.15s;
+    }
+    select:focus, input:focus { outline: none; border-color: var(--accent); }
+    .grid3 { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 0.6rem; }
+    .grid2 { display: grid; grid-template-columns: 1fr 1fr; gap: 0.6rem; }
+
+    .radio-group { display: flex; gap: 0.4rem; }
+    .radio-group label { flex: 1; text-align: center; padding: 0.38rem; border-radius: 6px; border: 1px solid var(--border); cursor: pointer; font-size: 0.78rem; color: var(--text-dim); transition: all 0.15s; }
+    .radio-group input[type="radio"], .radio-group input[type="checkbox"] { display: none; }
+    .radio-group input:checked + label { background: var(--accent); border-color: var(--accent); color: #fff; font-weight: 600; }
+    .model-group label { min-height: 2.15rem; display: flex; align-items: center; justify-content: center; }
+
+    .topk-row { display: flex; align-items: center; gap: 0.6rem; }
+    .topk-row input[type="range"] {
+      flex: 1; height: 4px; -webkit-appearance: none; appearance: none;
+      background: var(--border); border-radius: 9999px; outline: none;
+    }
+    .topk-row input[type="range"]::-webkit-slider-thumb {
+      -webkit-appearance: none; width: 15px; height: 15px; border-radius: 50%;
+      background: var(--accent); cursor: pointer; border: 2px solid #fff;
+    }
+    .topk-val { font-weight: 700; color: var(--accent); min-width: 1.2rem; text-align: center; }
+
+    details { border: 1px solid var(--border); border-radius: 7px; overflow: hidden; }
+    details summary { padding: 0.5rem 0.8rem; cursor: pointer; font-size: 0.78rem; color: var(--text-dim); user-select: none; background: #0f172a; list-style: none; display: flex; align-items: center; gap: 0.35rem; }
+    details summary::before { content: '▶'; font-size: 0.58rem; transition: transform 0.2s; }
+    details[open] summary::before { transform: rotate(90deg); }
+    details[open] summary { color: #f1f5f9; border-bottom: 1px solid var(--border); }
+    details .details-body { padding: 0.75rem; display: flex; flex-direction: column; gap: 0.65rem; }
+
+    .btn { padding: 0.6rem 1.1rem; border-radius: 7px; font-size: 0.85rem; font-weight: 600; cursor: pointer; border: none; transition: all 0.15s; }
+    .btn-primary { background: var(--accent); color: #fff; width: 100%; }
+    .btn-primary:hover { background: var(--accent-h); }
+    .btn-primary:disabled { background: #475569; cursor: not-allowed; }
+    .btn-admin { background: var(--admin); color: #fff; }
+    .btn-admin:hover { background: var(--admin-h); }
+    .btn-danger { background: #b91c1c; color: #fff; }
+    .btn-danger:hover { background: #991b1b; }
+    .btn-small { padding: 0.38rem 0.65rem; font-size: 0.72rem; }
+    .divider { height: 1px; background: var(--border); }
+
+    /* ── ПУСТОЕ СОСТОЯНИЕ ── */
+    .empty-state { margin: auto; text-align: center; color: #475569; }
+    .empty-state .icon { font-size: 2.2rem; margin-bottom: 0.6rem; opacity: 0.5; }
+    .empty-state p { font-size: 0.88rem; }
+
+    .spinner { margin: auto; width: 2.2rem; height: 2.2rem; border: 3px solid var(--border); border-top-color: var(--accent); border-radius: 50%; animation: spin 0.8s linear infinite; }
+    @keyframes spin { to { transform: rotate(360deg); } }
+
+    .error-box { background: #450a0a; border: 1px solid #b91c1c; border-radius: 8px; padding: 0.85rem; color: #fca5a5; font-size: 0.82rem; }
+
+    /* ── КАРТОЧКИ РЕКОМЕНДАЦИЙ ── */
+    .rec-card { background: var(--card); border: 1px solid var(--border); border-radius: 9px; overflow: hidden; }
+    .rec-card.rank1 { border-color: var(--accent); }
+    .rec-header { display: flex; align-items: center; gap: 0.65rem; padding: 0.75rem 0.9rem; background: #0f172a; border-bottom: 1px solid var(--border); }
+    .rank-badge { width: 1.85rem; height: 1.85rem; border-radius: 50%; background: #334155; display: flex; align-items: center; justify-content: center; font-weight: 700; font-size: 0.78rem; color: var(--text-dim); flex-shrink: 0; }
+    .rank-badge.gold { background: var(--accent); color: #fff; }
+    .rec-metrics { display: flex; gap: 1.25rem; margin-left: auto; }
+    .metric { text-align: right; }
+    .metric .val { font-size: 1.05rem; font-weight: 700; color: #f1f5f9; }
+    .metric .lbl { font-size: 0.6rem; color: var(--muted); text-transform: uppercase; letter-spacing: 0.04em; }
+    .speedup { color: #34d399 !important; }
+    .rec-body { padding: 0.9rem; }
+    .config-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(165px, 1fr)); gap: 0.45rem; }
+    .config-item { background: #0f172a; border-radius: 5px; padding: 0.45rem 0.65rem; }
+    .config-item .key { font-size: 0.6rem; color: var(--muted); margin-bottom: 0.12rem; }
+    .config-item .value { font-size: 0.83rem; font-weight: 600; color: var(--text); }
+
+    .band-bar { margin-top: 0.65rem; display: flex; align-items: center; gap: 0.45rem; font-size: 0.7rem; color: var(--muted); }
+    .band-label { white-space: nowrap; }
+    .band-track { flex: 1; height: 5px; background: var(--border); border-radius: 9999px; position: relative; }
+    .band-fill { position: absolute; height: 100%; background: linear-gradient(90deg, #0e7490, #22d3ee); border-radius: 9999px; }
+    .band-dot { position: absolute; top: 50%; width: 9px; height: 9px; background: var(--accent-l); border-radius: 50%; transform: translate(-50%,-50%); border: 2px solid var(--card); }
+    .band-note { font-size: 0.65rem; color: var(--muted); margin-top: 0.25rem; }
+
+    .warn-item { font-size: 0.72rem; color: #fbbf24; background: #451a00; border-radius: 4px; padding: 0.28rem 0.55rem; margin-top: 0.3rem; }
+    .predict-card { background: var(--card); border: 1px solid var(--accent); border-radius: 8px; padding: 1rem; }
+    .predict-main { display: flex; gap: 1.5rem; align-items: flex-end; flex-wrap: wrap; }
+    .predict-value { font-size: 2rem; font-weight: 700; color: #f1f5f9; }
+    .predict-label { font-size: 0.68rem; color: var(--muted); text-transform: uppercase; }
+
+    .strategy-group { display: flex; flex-direction: column; gap: 0.85rem; }
+    .strategy-header { display: flex; align-items: center; gap: 0.65rem; padding: 0.45rem 0; }
+    .strategy-header .s-label { font-size: 0.72rem; font-weight: 700; text-transform: uppercase; letter-spacing: 0.07em; color: var(--accent-l); }
+    .strategy-header .s-line { flex: 1; height: 1px; background: var(--border); }
+    .model-info { background: var(--card); border: 1px solid var(--border); border-radius: 7px; padding: 0.55rem 0.9rem; display: flex; gap: 1.25rem; flex-wrap: wrap; align-items: center; }
+    .model-info .mi { font-size: 0.71rem; }
+    .model-info .mi span { color: var(--muted); }
+    .model-info .mi strong { color: var(--text-dim); margin-left: 0.18rem; }
+
+    .tip-wrap { position: relative; display: inline-block; cursor: help; }
+    .tip-wrap .tip { display: none; position: absolute; bottom: 130%; right: 0; background: #0f172a; border: 1px solid var(--border); border-radius: 6px; padding: 0.45rem 0.65rem; font-size: 0.7rem; color: var(--text-dim); white-space: nowrap; z-index: 20; pointer-events: none; }
+    .tip-wrap:hover .tip { display: block; }
+    .tip-icon { font-size: 0.62rem; color: var(--muted); margin-left: 0.15rem; vertical-align: middle; }
+
+    /* ── ИСТОРИЯ ── */
+    .history-table { width: 100%; border-collapse: collapse; font-size: 0.78rem; }
+    .history-table th { color: var(--muted); font-weight: 600; text-align: left; padding: 0.4rem 0.6rem; border-bottom: 1px solid var(--border); font-size: 0.68rem; text-transform: uppercase; }
+    .history-table td { padding: 0.42rem 0.6rem; border-bottom: 1px solid #1e293b; color: var(--text-dim); }
+    .history-table tr:hover td { background: #1a2236; }
+    .history-table details { border: 0; border-radius: 0; overflow: visible; }
+    .history-table details summary { background: transparent; padding: 0; border: 0; color: var(--accent-l); font-size: 0.72rem; }
+    .history-table details summary::before { display: none; }
+    .history-detail { display: grid; grid-template-columns: 1fr 1fr; gap: 0.75rem; margin-top: 0.55rem; }
+    .json-box { background: #0f172a; border: 1px solid var(--border); border-radius: 6px; padding: 0.65rem; color: #cbd5e1; font-size: 0.68rem; white-space: pre-wrap; overflow-x: auto; max-height: 260px; }
+    .json-title { color: var(--muted); font-size: 0.62rem; text-transform: uppercase; margin-bottom: 0.28rem; letter-spacing: 0.04em; }
+    .ep-badge { display: inline-block; padding: 0.1rem 0.4rem; border-radius: 4px; font-size: 0.65rem; font-weight: 600; }
+    .ep-predict { background: #1e3a5f; color: #7dd3fc; }
+    .ep-recommend { background: #1a3a2a; color: #6ee7b7; }
+
+    .history-stats { display: flex; gap: 1.5rem; flex-wrap: wrap; margin-bottom: 0.85rem; }
+    .stat-card { background: var(--card); border: 1px solid var(--border); border-radius: 7px; padding: 0.55rem 1rem; }
+    .stat-card .s-val { font-size: 1.25rem; font-weight: 700; color: #f1f5f9; }
+    .stat-card .s-lbl { font-size: 0.65rem; color: var(--muted); margin-top: 0.1rem; }
+
+    /* ── ADMIN PANEL ── */
+    .admin-section { background: var(--card); border: 1px solid #4c1d95; border-radius: 9px; padding: 1rem; }
+    .admin-section h3 { font-size: 0.85rem; font-weight: 600; color: #c4b5fd; margin-bottom: 0.75rem; }
+    .model-card { background: #0f172a; border-radius: 7px; padding: 0.7rem; margin-bottom: 0.5rem; }
+    .model-card .mc-head { display: flex; align-items: flex-start; gap: 0.75rem; }
+    .model-card .mc-main { flex: 1; min-width: 0; }
+    .model-card .mc-title { font-size: 0.8rem; font-weight: 700; color: #e2e8f0; margin-bottom: 0.4rem; }
+    .model-card .mc-meta { font-size: 0.7rem; color: var(--muted); }
+    .admin-info { font-size: 0.78rem; color: #a78bfa; background: #1e1b4b; border-radius: 6px; padding: 0.5rem 0.75rem; margin-bottom: 0.75rem; }
+    .admin-form { display: grid; gap: 0.65rem; margin-top: 0.8rem; padding-top: 0.8rem; border-top: 1px solid #4c1d95; }
+
+    /* ── МОДАЛЬНОЕ ОКНО ── */
+    dialog.modal { background: var(--card); border: 1px solid var(--border); border-radius: 10px; padding: 1.5rem; width: 340px; color: var(--text); }
+    dialog.modal::backdrop { background: rgba(0,0,0,0.65); }
+    dialog.modal h2 { font-size: 1rem; font-weight: 600; margin-bottom: 0.25rem; color: #c4b5fd; }
+    dialog.modal p { font-size: 0.78rem; color: var(--muted); margin-bottom: 1rem; }
+    dialog.modal input { background: #0f172a; border: 1px solid var(--border); border-radius: 6px; color: var(--text); padding: 0.5rem 0.75rem; font-size: 0.875rem; width: 100%; margin-bottom: 0.75rem; }
+    dialog.modal input:focus { outline: none; border-color: var(--admin); }
+    .modal-btns { display: flex; gap: 0.5rem; }
+    .modal-btns .btn { flex: 1; }
+    .btn-outline { background: transparent; border: 1px solid var(--border); color: var(--text-dim); }
+    .btn-outline:hover { border-color: var(--text-dim); }
+  </style>
+</head>
+<body>
+
+<header>
+  <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="var(--accent)" stroke-width="2">
+    <circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/>
+  </svg>
+  <h1>Spark Config Recommender <span class="badge">v0.3</span></h1>
+  <button class="admin-btn" id="adminBtn" onclick="openAdminModal()">
+    <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+      <rect x="3" y="11" width="18" height="11" rx="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/>
+    </svg>
+    <span id="adminBtnLabel">Войти как администратор</span>
+  </button>
+</header>
+
+<div class="tabs" id="tabBar" role="tablist">
+  <div class="tab active" role="tab" tabindex="0" onclick="switchTab('recommend')" onkeydown="if(event.key==='Enter'||event.key===' ')switchTab('recommend')">Рекомендации</div>
+  <div class="tab" role="tab" tabindex="0" onclick="switchTab('predict')" onkeydown="if(event.key==='Enter'||event.key===' ')switchTab('predict')">Прогноз времени</div>
+  <div class="tab" role="tab" tabindex="0" onclick="switchTab('history')" onkeydown="if(event.key==='Enter'||event.key===' ')switchTab('history')">История запросов</div>
+  <div class="tab admin-tab" id="adminTab" role="tab" tabindex="0" style="display:none" onclick="switchTab('admin')" onkeydown="if(event.key==='Enter'||event.key===' ')switchTab('admin')">Управление моделями</div>
+</div>
+
+<div class="layout">
+
+  <div class="panel">
+    <div class="panel-empty" data-panel="history">
+      История запросов загружается справа. В таблице можно раскрыть входные параметры и ответ сервера.
+    </div>
+
+    <div class="panel-empty" data-panel="admin">
+      Управление моделями доступно справа после входа администратора.
+    </div>
+
+    <div data-panel="recommend predict">
+      <div class="section-title">Нагрузка</div>
+      <div class="field">
+        <label for="job_type">Тип задачи</label>
+        <select id="job_type"><option value="pagerank">PageRank</option></select>
+      </div>
+      <div class="field" style="margin-top:0.65rem">
+        <span class="field-lbl">Профиль входных данных</span>
+        <div class="radio-group">
+          <input type="radio" id="p_small" name="profile" value="small">
+          <label for="p_small">small</label>
+          <input type="radio" id="p_large" name="profile" value="large" checked>
+          <label for="p_large">large</label>
+        </div>
+      </div>
+    </div>
+
+    <div class="divider" data-panel="recommend predict"></div>
+
+    <div data-panel="recommend predict">
+      <div class="section-title">Топология кластера</div>
+      <div class="grid3">
+        <div class="field">
+          <label for="workers">Воркеры</label>
+          <input type="number" id="workers" value="4" min="1" max="16">
+        </div>
+        <div class="field">
+          <label for="worker_cores">Ядер / узел</label>
+          <input type="number" id="worker_cores" value="6" min="1" max="32">
+        </div>
+        <div class="field">
+          <label for="worker_memory_gb">RAM / узел, ГБ</label>
+          <input type="number" id="worker_memory_gb" value="12" min="1" max="256">
+        </div>
+      </div>
+    </div>
+
+    <div class="divider" data-panel="recommend predict"></div>
+
+    <div data-panel="recommend">
+      <div class="section-title">Параметры запроса</div>
+      <div class="field">
+        <label for="top_k">Топ-K рекомендаций</label>
+        <div class="topk-row">
+          <input type="range" id="top_k" min="1" max="5" value="3"
+                 oninput="document.getElementById('topk_val').textContent=this.value">
+          <span class="topk-val" id="topk_val">3</span>
+        </div>
+      </div>
+    </div>
+
+    <div data-panel="recommend predict">
+      <div class="field" style="margin-top:0.65rem">
+        <span class="field-lbl">Стратегии</span>
+        <div class="radio-group model-group">
+          <input type="checkbox" id="m_rf"  name="model_name" value="rf" checked>
+          <label for="m_rf">RF+RS</label>
+          <input type="checkbox" id="m_dnn" name="model_name" value="dnn" checked>
+          <label for="m_dnn">DNN+RS</label>
+          <input type="checkbox" id="m_ql"  name="model_name" value="ql" checked>
+          <label for="m_ql">RF+QL</label>
+        </div>
+      </div>
+    </div>
+
+    <div data-panel="predict">
+      <div class="section-title">Конфигурация Spark</div>
+      <div class="grid3">
+        <div class="field"><label for="pred_executor_cores">executor_cores</label><input type="number" id="pred_executor_cores" value="2" min="1"></div>
+        <div class="field"><label for="pred_executor_memory_mb">executor_memory_mb</label><input type="number" id="pred_executor_memory_mb" value="3072" min="256" step="256"></div>
+        <div class="field"><label for="pred_executor_instances">executor_instances</label><input type="number" id="pred_executor_instances" value="3" min="1"></div>
+      </div>
+      <details style="margin-top:0.65rem">
+        <summary>Дополнительные параметры</summary>
+        <div class="details-body">
+          <div class="grid3">
+            <div class="field"><label for="pred_driver_cores">driver_cores</label><input type="number" id="pred_driver_cores" value="1" min="1"></div>
+            <div class="field"><label for="pred_driver_memory_mb">driver_memory_mb</label><input type="number" id="pred_driver_memory_mb" value="1024" min="256" step="256"></div>
+            <div class="field"><label for="pred_rpc_message_maxSize">rpc_message_maxSize</label><input type="number" id="pred_rpc_message_maxSize" value="128" min="64"></div>
+          </div>
+          <div class="grid2">
+            <div class="field"><label for="pred_memory_fraction">memory_fraction</label><input type="number" id="pred_memory_fraction" value="0.6" min="0.1" max="0.9" step="0.1"></div>
+            <div class="field"><label for="pred_memory_storageFraction">memory_storageFraction</label><input type="number" id="pred_memory_storageFraction" value="0.5" min="0.1" max="0.9" step="0.1"></div>
+          </div>
+          <div class="grid3">
+            <div class="field"><label for="pred_shuffle_file_buffer_kb">shuffle_file_buffer_kb</label><input type="number" id="pred_shuffle_file_buffer_kb" value="32" min="16"></div>
+            <div class="field"><label for="pred_broadcast_block_mb">broadcast_block_mb</label><input type="number" id="pred_broadcast_block_mb" value="4" min="2"></div>
+            <div class="field"><label for="pred_maxSizeInFlight_mb">maxSizeInFlight_mb</label><input type="number" id="pred_maxSizeInFlight_mb" value="48" min="24"></div>
+          </div>
+          <div class="grid2">
+            <div class="field"><label for="pred_io_codec">io_codec</label><select id="pred_io_codec"><option value="lz4">lz4</option><option value="snappy">snappy</option></select></div>
+            <div class="field"><label for="pred_rdd_compress">rdd_compress</label><select id="pred_rdd_compress"><option value="0">false</option><option value="1">true</option></select></div>
+          </div>
+          <div class="grid2">
+            <div class="field"><label for="pred_shuffle_compress">shuffle_compress</label><select id="pred_shuffle_compress"><option value="1">true</option><option value="0">false</option></select></div>
+            <div class="field"><label for="pred_spill_compress">spill_compress</label><select id="pred_spill_compress"><option value="1">true</option><option value="0">false</option></select></div>
+          </div>
+          <div class="field"><label for="pred_broadcast_compress">broadcast_compress</label><select id="pred_broadcast_compress"><option value="1">true</option><option value="0">false</option></select></div>
+        </div>
+      </details>
+    </div>
+
+    <details data-panel="recommend">
+      <summary>Ограничения (опционально)</summary>
+      <div class="details-body">
+        <div class="grid3">
+          <div class="field">
+            <label for="max_ec">Макс. ядер executor</label>
+            <input type="number" id="max_ec" placeholder="авто" min="1">
+          </div>
+          <div class="field">
+            <label for="max_em">Макс. памяти, МБ</label>
+            <input type="number" id="max_em" placeholder="авто" min="256" step="1024">
+          </div>
+          <div class="field">
+            <label for="max_ei">Макс. экземпляров</label>
+            <input type="number" id="max_ei" placeholder="авто" min="1">
+          </div>
+        </div>
+      </div>
+    </details>
+
+    <button class="btn btn-primary" id="btn_recommend" onclick="handleAction()">
+      Получить рекомендации
+    </button>
+  </div>
+
+  <div class="results" id="results">
+    <div class="empty-state">
+      <div class="icon">🔍</div>
+      <p>Заполните параметры и нажмите кнопку<br>для получения рекомендаций</p>
+    </div>
+  </div>
+</div>
+
+<dialog id="adminModal" class="modal" oncancel="closeAdminModal()">
+  <h2>Вход администратора</h2>
+  <p>Введите пароль администратора для доступа к функциям управления моделями.</p>
+  <input type="password" id="adminKeyInput" placeholder="RECOMMENDER_ADMIN_KEY" onkeydown="if(event.key==='Enter')submitAdmin()">
+  <div id="adminError" style="display:none;color:#f87171;font-size:0.75rem;margin-bottom:0.5rem"></div>
+  <div class="modal-btns">
+    <button class="btn btn-outline" onclick="closeAdminModal()">Отмена</button>
+    <button class="btn btn-admin" onclick="submitAdmin()">Войти</button>
+  </div>
+</dialog>
+
+<script>
+// ── Состояние ────────────────────────────────────────────────────────────────
+let adminKey = null;
+let currentTab = 'recommend';
+
+// ── Вкладки ──────────────────────────────────────────────────────────────────
+function switchTab(tab) {
+  currentTab = tab;
+  document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
+  const tabs = document.querySelectorAll('.tab');
+  const map = { recommend: 0, predict: 1, history: 2, admin: 3 };
+  if (tabs[map[tab]]) tabs[map[tab]].classList.add('active');
+  document.querySelectorAll('[data-panel]').forEach(el => {
+    const panels = el.dataset.panel.split(/\s+/);
+    el.style.display = panels.includes(tab) ? '' : 'none';
+  });
+
+  const btn = document.getElementById('btn_recommend');
+  if (tab === 'recommend') {
+    btn.textContent = 'Получить рекомендации';
+    document.getElementById('results').innerHTML = '<div class="empty-state"><div class="icon">🔍</div><p>Заполните параметры и нажмите кнопку<br>для получения рекомендаций</p></div>';
+  } else if (tab === 'predict') {
+    btn.textContent = 'Предсказать время';
+    document.getElementById('results').innerHTML = '<div class="empty-state"><div class="icon">⏱</div><p>Задайте конфигурацию Spark<br>и получите прогноз времени выполнения</p></div>';
+  } else if (tab === 'history') {
+    btn.textContent = 'Загрузить историю';
+    loadHistory();
+  } else if (tab === 'admin') {
+    btn.textContent = 'Перезагрузить модели';
+    loadAdminModels();
+  }
+}
+
+function handleAction() {
+  if (currentTab === 'recommend') submitRecommend();
+  else if (currentTab === 'predict') submitPredict();
+  else if (currentTab === 'history') loadHistory();
+  else if (currentTab === 'admin') reloadModels();
+}
+
+// ── Администратор: модальное окно ────────────────────────────────────────────
+const _dlg = document.getElementById('adminModal');
+_dlg.addEventListener('click', e => { if (e.target === _dlg) closeAdminModal(); });
+
+function openAdminModal() {
+  if (adminKey) { logoutAdmin(); return; }
+  document.getElementById('adminKeyInput').value = '';
+  document.getElementById('adminError').style.display = 'none';
+  _dlg.showModal();
+  setTimeout(() => document.getElementById('adminKeyInput').focus(), 50);
+}
+
+function closeAdminModal() {
+  if (_dlg.open) _dlg.close();
+}
+
+async function submitAdmin() {
+  const key = document.getElementById('adminKeyInput').value.trim();
+  if (!key) return;
+  try {
+    const resp = await fetch('/admin/models', { headers: { 'X-API-Key': key } });
+    if (!resp.ok) {
+      const data = await resp.json().catch(() => ({}));
+      document.getElementById('adminError').style.display = 'block';
+      document.getElementById('adminError').textContent = data.detail || 'Неверный пароль администратора.';
+      return;
+    }
+    adminKey = key;
+    closeAdminModal();
+    document.getElementById('adminBtn').classList.add('active');
+    document.getElementById('adminBtnLabel').textContent = 'Администратор ✓';
+    document.getElementById('adminTab').style.display = '';
+  } catch {
+    document.getElementById('adminError').style.display = 'block';
+    document.getElementById('adminError').textContent = 'Ошибка соединения.';
+  }
+}
+
+function logoutAdmin() {
+  adminKey = null;
+  document.getElementById('adminBtn').classList.remove('active');
+  document.getElementById('adminBtnLabel').textContent = 'Войти как администратор';
+  document.getElementById('adminTab').style.display = 'none';
+  if (currentTab === 'admin') switchTab('recommend');
+}
+
+switchTab('recommend');
+
+// ── Рекомендации ─────────────────────────────────────────────────────────────
+async function submitRecommend() {
+  const btn = document.getElementById('btn_recommend');
+  const resultsEl = document.getElementById('results');
+  const profile = document.querySelector('input[name="profile"]:checked').value;
+  const modelNames = selectedModels();
+  if (!modelNames.length) {
+    resultsEl.innerHTML = '<div class="error-box">Выберите хотя бы одну стратегию.</div>';
+    return;
+  }
+  const constraints = {};
+  const ec = document.getElementById('max_ec').value;
+  const em = document.getElementById('max_em').value;
+  const ei = document.getElementById('max_ei').value;
+  if (ec) constraints.max_executor_cores = parseInt(ec);
+  if (em) constraints.max_executor_memory_mb = parseInt(em);
+  if (ei) constraints.max_executor_instances = parseInt(ei);
+
+  const baseBody = {
+    job_type: document.getElementById('job_type').value,
+    input: { profile },
+    topology: {
+      workers: parseInt(document.getElementById('workers').value),
+      worker_cores: parseInt(document.getElementById('worker_cores').value),
+      worker_memory_gb: parseInt(document.getElementById('worker_memory_gb').value),
+    },
+    preferences: { return_top_k: parseInt(document.getElementById('top_k').value) },
+  };
+  if (Object.keys(constraints).length) baseBody.constraints = constraints;
+
+  const headers = { 'Content-Type': 'application/json' };
+  if (adminKey) headers['X-API-Key'] = adminKey;
+
+  btn.disabled = true; btn.textContent = 'Запрос…';
+  resultsEl.innerHTML = '<div class="spinner"></div>';
+
+  try {
+    const groups = await Promise.all(modelNames.map(async modelName => {
+      const resp = await fetch('/recommend', {
+        method: 'POST',
+        headers,
+        body: JSON.stringify({ ...baseBody, model_name: modelName }),
+      });
+      const data = await resp.json();
+      return { modelName, resp, data };
+    }));
+    const failed = groups.find(g => !g.resp.ok);
+    if (failed) {
+      resultsEl.innerHTML = `<div class="error-box">Ошибка ${failed.resp.status} (${strategyLabel(failed.modelName)}): ${escHtml(typeof failed.data.detail === 'string' ? failed.data.detail : JSON.stringify(failed.data.detail))}</div>`;
+      return;
+    }
+    renderRecommendGroups(groups);
+  } catch (e) {
+    resultsEl.innerHTML = `<div class="error-box">Сетевая ошибка: ${escHtml(e.message)}</div>`;
+  } finally {
+    btn.disabled = false; btn.textContent = 'Получить рекомендации';
+  }
+}
+
+function renderRecommendGroups(groups) {
+  const el = document.getElementById('results');
+  const html = groups.map(g => renderRecommendGroup(g.modelName, g.data)).join('');
+  el.innerHTML = html || '<div class="empty-state"><div class="icon">🤷</div><p>Нет рекомендаций для заданных параметров</p></div>';
+}
+
+function renderRecommendGroup(modelName, data) {
+  const recs = data.recommendations ?? [];
+  const mi = data.model_info ?? {};
+  if (!recs.length) { return ''; }
+
+  const mae = mi.predictor_mae_s != null ? mi.predictor_mae_s.toFixed(2) + ' с' : '—';
+  const r2  = mi.predictor_r2 != null ? mi.predictor_r2.toFixed(3) : '—';
+  const cards = recs.map(buildCard).join('');
+  return `
+    <div class="strategy-group">
+      <div class="strategy-header">
+        <span class="s-label">${strategyLabel(modelName)}</span>
+        <div class="s-line"></div>
+        <span style="font-size:0.65rem;color:var(--muted)">MAE ${mae} &nbsp;·&nbsp; R² ${r2}</span>
+      </div>
+      ${cards}
+      <div class="model-info" style="font-size:0.68rem">
+        <div class="mi"><span>Датасет:</span><strong>${escHtml(mi.dataset_version ?? '—')}</strong></div>
+      </div>
+    </div>`;
+}
+
+async function submitPredict() {
+  const btn = document.getElementById('btn_recommend');
+  const resultsEl = document.getElementById('results');
+  const modelNames = selectedModels();
+  if (!modelNames.length) {
+    resultsEl.innerHTML = '<div class="error-box">Выберите хотя бы одну стратегию.</div>';
+    return;
+  }
+  const baseBody = {
+    job_type: document.getElementById('job_type').value,
+    profile: document.querySelector('input[name="profile"]:checked').value,
+    topology_workers: parseInt(document.getElementById('workers').value),
+    topology_worker_cores: parseInt(document.getElementById('worker_cores').value),
+    topology_worker_mem_gb: parseInt(document.getElementById('worker_memory_gb').value),
+    executor_cores: parseInt(document.getElementById('pred_executor_cores').value),
+    executor_memory_mb: parseInt(document.getElementById('pred_executor_memory_mb').value),
+    executor_instances: parseInt(document.getElementById('pred_executor_instances').value),
+    driver_cores: parseInt(document.getElementById('pred_driver_cores').value),
+    driver_memory_mb: parseInt(document.getElementById('pred_driver_memory_mb').value),
+    memory_fraction: parseFloat(document.getElementById('pred_memory_fraction').value),
+    memory_storageFraction: parseFloat(document.getElementById('pred_memory_storageFraction').value),
+    shuffle_compress: parseInt(document.getElementById('pred_shuffle_compress').value),
+    spill_compress: parseInt(document.getElementById('pred_spill_compress').value),
+    shuffle_file_buffer_kb: parseInt(document.getElementById('pred_shuffle_file_buffer_kb').value),
+    broadcast_block_mb: parseInt(document.getElementById('pred_broadcast_block_mb').value),
+    broadcast_compress: parseInt(document.getElementById('pred_broadcast_compress').value),
+    maxSizeInFlight_mb: parseInt(document.getElementById('pred_maxSizeInFlight_mb').value),
+    rpc_message_maxSize: parseInt(document.getElementById('pred_rpc_message_maxSize').value),
+    rdd_compress: parseInt(document.getElementById('pred_rdd_compress').value),
+    io_codec: document.getElementById('pred_io_codec').value,
+  };
+  const headers = { 'Content-Type': 'application/json' };
+  if (adminKey) headers['X-API-Key'] = adminKey;
+
+  btn.disabled = true; btn.textContent = 'Запрос…';
+  resultsEl.innerHTML = '<div class="spinner"></div>';
+  try {
+    const groups = await Promise.all(modelNames.map(async modelName => {
+      const resp = await fetch('/predict', {
+        method: 'POST',
+        headers,
+        body: JSON.stringify({ ...baseBody, model_name: modelName }),
+      });
+      const data = await resp.json();
+      return { modelName, resp, data };
+    }));
+    const failed = groups.find(g => !g.resp.ok);
+    if (failed) {
+      resultsEl.innerHTML = `<div class="error-box">Ошибка ${failed.resp.status} (${strategyLabel(failed.modelName)}): ${escHtml(typeof failed.data.detail === 'string' ? failed.data.detail : JSON.stringify(failed.data.detail))}</div>`;
+      return;
+    }
+    renderPredictGroups(groups, baseBody);
+  } catch (e) {
+    resultsEl.innerHTML = `<div class="error-box">Сетевая ошибка: ${escHtml(e.message)}</div>`;
+  } finally {
+    btn.disabled = false; btn.textContent = 'Предсказать время';
+  }
+}
+
+function renderPredictGroups(groups, req) {
+  document.getElementById('results').innerHTML = groups.map(g => renderPredictGroup(g.modelName, g.data)).join('') + `
+    <div class="model-info">
+      <div class="mi"><span>Нагрузка:</span><strong>${escHtml(req.job_type)}</strong></div>
+      <div class="mi"><span>Профиль:</span><strong>${escHtml(req.profile)}</strong></div>
+      <div class="mi"><span>Топология:</span><strong>${req.topology_workers}×${req.topology_worker_cores}, ${req.topology_worker_mem_gb} ГБ</strong></div>
+    </div>`;
+}
+
+function renderPredictGroup(modelName, data) {
+  const [lo, hi] = data.confidence_band ?? [data.predicted_runtime_s, data.predicted_runtime_s];
+  const hasBand = hi - lo > 0.1;
+  const warnings = (data.warnings ?? []).map(w => `<div class="warn-item">⚠ ${escHtml(w)}</div>`).join('');
+  const mi = data.model_info ?? {};
+  const mae = mi.predictor_mae_s != null ? mi.predictor_mae_s.toFixed(2) + ' с' : '—';
+  const r2  = mi.predictor_r2 != null ? mi.predictor_r2.toFixed(3) : '—';
+  const bandMetric = hasBand
+    ? `<div class="metric"><div class="val">${Number(lo).toFixed(2)}–${Number(hi).toFixed(2)} с</div><div class="lbl">Диапазон (p5–p95)</div></div>`
+    : `<div class="metric"><div class="val" style="color:var(--muted)">—</div><div class="lbl">Диапазон прогноза</div></div>`;
+  return `
+    <div class="predict-card">
+      <div class="predict-main">
+        <div>
+          <div class="predict-value">${Number(data.predicted_runtime_s).toFixed(2)} с</div>
+          <div class="predict-label">${strategyLabel(modelName)}</div>
+        </div>
+        ${bandMetric}
+        <div class="metric"><div class="val">${escHtml(data.model_type ?? 'rf')}</div><div class="lbl">Модель</div></div>
+        <div class="metric"><div class="val">${mae}</div><div class="lbl">MAE</div></div>
+        <div class="metric"><div class="val">${r2}</div><div class="lbl">R²</div></div>
+      </div>
+      ${warnings}
+    </div>`;
+}
+
+function buildCard(r) {
+  const c = r.config;
+  const isGold = r.rank === 1;
+  const [bLow, bHigh] = r.confidence_band ?? [r.predicted_runtime_s, r.predicted_runtime_s];
+  const hasBand = bHigh - bLow > 0.1;
+  const range = bHigh - bLow || 1;
+  const pct = Math.max(12, Math.min(88, ((r.predicted_runtime_s - bLow) / (bHigh - bLow + range * 0.4)) * 76 + 12));
+
+  const speedupTip = `<div class="tip-wrap">
+    <span class="val speedup">×${r.predicted_speedup_vs_default.toFixed(2)}</span><span class="tip-icon">ℹ</span>
+    <div class="tip">Ускорение относительно стандартных настроек Spark:<br>executor_cores=1, executor_memory=1 ГБ, instances=2</div>
+  </div>`;
+
+  const configItems = [
+    ['executor_cores', c.executor_cores], ['executor_memory', fmtMem(c.executor_memory_mb)],
+    ['executor_instances', c.executor_instances], ['driver_cores', c.driver_cores],
+    ['driver_memory', fmtMem(c.driver_memory_mb)], ['memory_fraction', c.memory_fraction],
+    ['mem_storageFraction', c.memory_storageFraction],
+    ['shuffle_compress', c.shuffle_compress ? 'true' : 'false'],
+    ['spill_compress', c.spill_compress ? 'true' : 'false'],
+    ['shuffle_buf', c.shuffle_file_buffer_kb + 'k'], ['broadcast_block', c.broadcast_block_mb + 'm'],
+    ['broadcast_compress', c.broadcast_compress ? 'true' : 'false'],
+    ['maxSizeInFlight', c.maxSizeInFlight_mb + 'm'], ['rpc_maxSize', c.rpc_message_maxSize + 'm'],
+    ['rdd_compress', c.rdd_compress ? 'true' : 'false'], ['io_codec', c.io_codec],
+  ].map(([k, v]) => `<div class="config-item"><div class="key">${k}</div><div class="value">${escHtml(String(v))}</div></div>`).join('');
+
+  const warnings = (r.warnings ?? []).map(w => `<div class="warn-item">⚠ ${escHtml(w)}</div>`).join('');
+
+  return `<div class="rec-card ${isGold ? 'rank1' : ''}">
+    <div class="rec-header">
+      <div class="rank-badge ${isGold ? 'gold' : ''}">${r.rank}</div>
+      <div style="font-size:0.73rem;color:var(--text-dim)">${isGold ? 'Лучшая конфигурация' : 'Альтернатива #' + r.rank}</div>
+      <div class="rec-metrics">
+        <div class="metric"><div class="val">${r.predicted_runtime_s.toFixed(1)} с</div><div class="lbl">Прогноз времени</div></div>
+        <div class="metric">${speedupTip}<div class="lbl">Ускорение vs стандарт</div></div>
+      </div>
+    </div>
+    <div class="rec-body">
+      <div class="config-grid">${configItems}</div>
+      ${hasBand ? `
+      <div class="band-bar">
+        <span class="band-label">мин ${bLow.toFixed(1)}с</span>
+        <div class="band-track">
+          <div class="band-fill" style="left:10%;right:10%"></div>
+          <div class="band-dot" style="left:${pct.toFixed(1)}%"></div>
+        </div>
+        <span class="band-label">макс ${bHigh.toFixed(1)}с</span>
+      </div>
+      <div class="band-note">Диапазон: p5–p95 предсказаний деревьев RF</div>` : `
+      <div class="band-note" style="color:var(--muted)">Диапазон прогноза недоступен — нейросеть выдаёт одно значение</div>`}
+      ${warnings}
+    </div>
+  </div>`;
+}
+
+// ── История ──────────────────────────────────────────────────────────────────
+async function loadHistory() {
+  const el = document.getElementById('results');
+  el.innerHTML = '<div class="spinner"></div>';
+  try {
+    const [histResp, statsResp] = await Promise.all([
+      fetch('/history?limit=30'),
+      fetch('/history/stats'),
+    ]);
+    const hist = await histResp.json();
+    const stats = await statsResp.json();
+    renderHistory(hist.items ?? [], stats);
+  } catch (e) {
+    el.innerHTML = `<div class="error-box">Ошибка загрузки истории: ${escHtml(e.message)}</div>`;
+  }
+}
+
+function renderHistory(items, stats) {
+  const el = document.getElementById('results');
+  const byEp = stats.by_endpoint ?? {};
+  const statCards = `
+    <div class="history-stats">
+      <div class="stat-card"><div class="s-val">${stats.total_requests ?? 0}</div><div class="s-lbl">Всего запросов</div></div>
+      <div class="stat-card"><div class="s-val">${byEp['/predict'] ?? 0}</div><div class="s-lbl">Predict</div></div>
+      <div class="stat-card"><div class="s-val">${byEp['/recommend'] ?? 0}</div><div class="s-lbl">Recommend</div></div>
+      <div class="stat-card"><div class="s-val">${stats.avg_duration_ms != null ? stats.avg_duration_ms.toFixed(0) + ' мс' : '—'}</div><div class="s-lbl">Средняя задержка</div></div>
+    </div>`;
+
+  if (!items.length) { el.innerHTML = statCards + '<div class="empty-state"><div class="icon">📭</div><p>История запросов пуста</p></div>'; return; }
+
+  const rows = items.map(it => {
+    const epCls = it.endpoint === '/predict' ? 'ep-predict' : 'ep-recommend';
+    const tsVal = it.ts_ms ?? (Number(it.ts) * 1000);
+    const ts = new Date(tsVal).toLocaleString('ru-RU', {
+      month: 'short', day: '2-digit', hour: '2-digit', minute: '2-digit', second: '2-digit'
+    });
+    return `<tr>
+      <td>${ts}</td>
+      <td><span class="ep-badge ${epCls}">${it.endpoint}</span></td>
+      <td>${it.job_type ?? '—'}</td>
+      <td>${it.duration_ms != null ? it.duration_ms.toFixed(0) + ' мс' : '—'}</td>
+      <td>
+        <details>
+          <summary>Показать</summary>
+          <div class="history-detail">
+            <div><div class="json-title">Запрос</div><pre class="json-box">${escHtml(formatJson(it.request_json))}</pre></div>
+            <div><div class="json-title">Ответ</div><pre class="json-box">${escHtml(formatJson(it.response_json))}</pre></div>
+          </div>
+        </details>
+      </td>
+    </tr>`;
+  }).join('');
+
+  el.innerHTML = statCards + `
+    <table class="history-table">
+      <thead><tr><th>Время</th><th>Эндпоинт</th><th>Нагрузка</th><th>Задержка</th><th>Детали</th></tr></thead>
+      <tbody>${rows}</tbody>
+    </table>`;
+}
+
+// ── Управление моделями (admin) ───────────────────────────────────────────────
+async function loadAdminModels() {
+  const el = document.getElementById('results');
+  el.innerHTML = '<div class="spinner"></div>';
+  try {
+    const resp = await fetch('/admin/models', { headers: adminKey ? { 'X-API-Key': adminKey } : {} });
+    const data = await resp.json();
+    renderAdminModels(data);
+  } catch (e) {
+    el.innerHTML = `<div class="error-box">Ошибка: ${escHtml(e.message)}</div>`;
+  }
+}
+
+function renderAdminModels(data) {
+  const el = document.getElementById('results');
+  const models = data.models ?? {};
+  const modelCards = Object.entries(models).map(([jt, info]) => {
+    const m = info.metrics ?? {};
+    const [jobType, modelName] = jt.split('/');
+    const mae = m.MAE ?? m.mae_s;
+    const r2 = m.R2 ?? m.r2;
+    return `<div class="model-card">
+      <div class="mc-head">
+        <div class="mc-main">
+          <div class="mc-title">${escHtml(jt)}</div>
+          <div class="mc-meta">Тип: ${escHtml(info.predictor_type)} &nbsp;|&nbsp; MAE: ${mae != null ? Number(mae).toFixed(2) + ' с' : '—'} &nbsp;|&nbsp; R²: ${r2 != null ? Number(r2).toFixed(3) : '—'}</div>
+          <div class="mc-meta" style="margin-top:0.2rem">Датасет: ${escHtml(info.dataset_version)}</div>
+        </div>
+        <button class="btn btn-danger btn-small" onclick="deleteModel('${escAttr(jobType)}','${escAttr(modelName)}')">Удалить</button>
+      </div>
+    </div>`;
+  }).join('') || '<div class="mc-meta">Модели не загружены</div>';
+
+  el.innerHTML = `
+    <div class="admin-section">
+      <h3>Загруженные модели</h3>
+      <div class="admin-info">Директория моделей: ${escHtml(data.model_dir ?? '—')}</div>
+      ${modelCards}
+      <div class="admin-form">
+        <h3>Загрузить RF-модель</h3>
+        <div class="grid3">
+          <div class="field">
+            <label for="upload_job_type">Нагрузка</label>
+            <select id="upload_job_type"><option value="pagerank">PageRank</option></select>
+          </div>
+          <div class="field">
+            <label for="upload_model_name">Модель</label>
+            <select id="upload_model_name"><option value="rf">RF</option></select>
+          </div>
+          <div class="field">
+            <label for="upload_model_file">model.joblib</label>
+            <input type="file" id="upload_model_file" accept=".joblib,.pkl">
+          </div>
+        </div>
+        <div class="grid3">
+          <div class="field">
+            <label for="upload_pre_file">preprocessor.joblib</label>
+            <input type="file" id="upload_pre_file" accept=".joblib,.pkl">
+          </div>
+          <div class="field">
+            <label for="upload_report_file">report.json</label>
+            <input type="file" id="upload_report_file" accept=".json">
+          </div>
+          <div class="field">
+            <label>&nbsp;</label>
+            <button class="btn btn-admin" onclick="uploadModel()">Загрузить</button>
+          </div>
+        </div>
+      </div>
+    </div>`;
+}
+
+async function deleteModel(jobType, modelName) {
+  if (!adminKey) return;
+  if (!confirm(`Удалить модель ${jobType}/${modelName} из пула?`)) return;
+  const resp = await fetch(`/admin/models/${encodeURIComponent(jobType)}/${encodeURIComponent(modelName)}`, {
+    method: 'DELETE',
+    headers: { 'X-API-Key': adminKey },
+  });
+  const data = await resp.json().catch(() => ({}));
+  if (!resp.ok) {
+    document.getElementById('results').innerHTML = `<div class="error-box">Ошибка: ${escHtml(data.detail ?? JSON.stringify(data))}</div>`;
+    return;
+  }
+  await loadAdminModels();
+}
+
+async function uploadModel() {
+  if (!adminKey) return;
+  const modelFile = document.getElementById('upload_model_file').files[0];
+  const preFile = document.getElementById('upload_pre_file').files[0];
+  const reportFile = document.getElementById('upload_report_file').files[0];
+  if (!modelFile) {
+    document.getElementById('results').insertAdjacentHTML('afterbegin', '<div class="error-box">Выберите файл модели.</div>');
+    return;
+  }
+  const body = {
+    job_type: document.getElementById('upload_job_type').value,
+    model_name: document.getElementById('upload_model_name').value,
+    filename: modelFile.name,
+    content_b64: await fileToBase64(modelFile),
+  };
+  if (preFile) {
+    body.preprocessor_filename = preFile.name;
+    body.preprocessor_content_b64 = await fileToBase64(preFile);
+  }
+  if (reportFile) {
+    body.report_filename = reportFile.name;
+    body.report_content_b64 = await fileToBase64(reportFile);
+  }
+
+  const resp = await fetch('/admin/models/upload', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', 'X-API-Key': adminKey },
+    body: JSON.stringify(body),
+  });
+  const data = await resp.json().catch(() => ({}));
+  if (!resp.ok) {
+    document.getElementById('results').innerHTML = `<div class="error-box">Ошибка загрузки: ${escHtml(data.detail ?? JSON.stringify(data))}</div>`;
+    return;
+  }
+  await loadAdminModels();
+}
+
+async function reloadModels() {
+  const btn = document.getElementById('btn_recommend');
+  btn.disabled = true; btn.textContent = 'Перезагрузка…';
+  try {
+    const resp = await fetch('/admin/models/reload', {
+      method: 'POST',
+      headers: adminKey ? { 'X-API-Key': adminKey } : {},
+    });
+    const data = await resp.json();
+    if (!resp.ok) {
+      document.getElementById('results').innerHTML = `<div class="error-box">Ошибка: ${escHtml(data.detail ?? JSON.stringify(data))}</div>`;
+      return;
+    }
+    await loadAdminModels();
+  } catch (e) {
+    document.getElementById('results').innerHTML = `<div class="error-box">Ошибка: ${escHtml(e.message)}</div>`;
+  } finally {
+    btn.disabled = false; btn.textContent = 'Перезагрузить модели';
+  }
+}
+
+// ── Утилиты ──────────────────────────────────────────────────────────────────
+function selectedModels() {
+  return Array.from(document.querySelectorAll('input[name="model_name"]:checked')).map(el => el.value);
+}
+function strategyLabel(modelName) {
+  return ({ rf: 'RF+RandomSearch', dnn: 'DNN+RandomSearch', ql: 'RF+Q-learning' })[modelName] ?? modelName;
+}
+function fmtMem(mb) { return (mb >= 1024 && mb % 1024 === 0) ? (mb / 1024) + 'g' : mb + 'm'; }
+function escHtml(s) { return String(s).replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c])); }
+function escAttr(s) { return escHtml(s).replace(/`/g, '&#96;'); }
+function formatJson(value) {
+  if (typeof value === 'string') {
+    try { return JSON.stringify(JSON.parse(value), null, 2); } catch { return value; }
+  }
+  return JSON.stringify(value ?? {}, null, 2);
+}
+function fileToBase64(file) {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = () => resolve(String(reader.result).split(',')[1]);
+    reader.onerror = reject;
+    reader.readAsDataURL(file);
+  });
+}
+</script>
+</body>
+</html>

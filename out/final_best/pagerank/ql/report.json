@@ -1,0 +1,16 @@
+{
+  "dataset": "data/hibench_train_20260424_175032_clean.csv",
+  "model_type": "ql",
+  "optimizer": {
+    "topology": {
+      "workers": 4,
+      "worker_cores": 2,
+      "worker_memory_gb": 4
+    },
+    "profile": "large",
+    "default_time": 92.45571651565264,
+    "best_time": 56.943737291065446,
+    "speedup": 1.6236327454776853,
+    "n_episodes": 10
+  }
+}

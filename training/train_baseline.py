@@ -200,8 +200,6 @@ def main():
         include_dummy=not args.skip_dummy,
         rf_search_iters=args.rf_search_iters,
         sa_iters=args.sa_iters,
-        sa_T0=args.sa_T0,
-        sa_alpha=args.sa_alpha,
         mlp_hidden=mlp_hidden,
         mlp_lr=args.mlp_lr,
         mlp_max_iter=args.mlp_max_iter,
@@ -218,7 +216,7 @@ def main():
 
     # JSON отчёт
     report = {
-        "task": "WordCount",
+        "task": Path(args.csv).stem,
         "dataset": str(args.csv),
         "n_train": int(len(dataset.X_train)),
         "n_val": int(len(dataset.X_val)),

@@ -1,0 +1,20 @@
+{
+  "4w2c4g_large": {
+    "executor_cores": 2,
+    "executor_instances": 5,
+    "driver_cores": 2,
+    "memory_fraction": 0.7,
+    "memory_storageFraction": 0.5,
+    "rpc_message_maxSize": 192,
+    "executor_memory_mb": 5120.0,
+    "driver_memory_mb": 2048.0,
+    "shuffle_file_buffer_kb": 80.0,
+    "broadcast_block_mb": 14.0,
+    "maxSizeInFlight_mb": 64.0,
+    "shuffle_compress": 1,
+    "spill_compress": 0,
+    "broadcast_compress": 1,
+    "rdd_compress": 1,
+    "io_codec": "snappy"
+  }
+}
